@@ -7,6 +7,18 @@
 .stack-line{flex-direction:column;align-items:stretch;gap:4px}.stack-label{text-align:left}.stack-rows{display:flex;flex-direction:column;gap:4px}#stack-row,#stack-row-deep{display:grid;gap:4px;width:100%;min-width:0}#stack-row{grid-template-columns:repeat(4,minmax(0,1fr))}#stack-row-deep{grid-template-columns:repeat(5,minmax(0,1fr))}.stack-rows .btn{font-size:11.5px;padding:6px 1px;min-width:0}.seat-group{min-height:44px}.seat-group[data-seat="0"]{width:56px}.action-chip:disabled{background:#383e48;color:#939cab;opacity:.65;cursor:not-allowed}.allin-chip{background:#7e2456}.limp-chip{background:#34715e}.hero-repush-chip{background:#0c6471}.seat-actions-bar{min-height:13px}.action-chip{line-height:1.1}@media(max-width:350px){.stack-rows .btn{font-size:10.5px}}
 
 .top-bar{justify-content:space-between}#spot-reset:empty{display:none}.verdict-sub-note:empty{display:none}
+
+@media(max-width:600px){
+ .seat-group{width:54px;gap:3px}
+ .seat{width:54px;height:30px;min-height:30px;font-size:11px}
+ .seat-actions-bar{flex-direction:column;align-items:center;gap:4px;min-height:0}
+ .action-chip{min-width:44px;min-height:44px;padding:4px;font-size:12px;border-radius:6px;display:flex;align-items:center;justify-content:center}
+ .hero-repush-chip{min-width:56px;font-size:10px}
+ .poker-table-felt{top:90px;height:202px}
+}
+@media(max-width:600px){.action-chip{padding:8px;background-clip:content-box;border-radius:14px}}
+
+@media(max-width:600px){.seat-group{transform:translate(-50%,0)}.poker-table-felt{top:54px;height:230px}}
 </style></head><body><main class="app-container">
   <section class="panel" aria-label="Стол и стек">
     <div class="top-bar"><div class="mode-switch" role="group" aria-label="Размер стола"><button type="button" class="mode-btn" id="btn-8max">8-MAX</button><button type="button" class="mode-btn" id="btn-9max">9-MAX</button></div><div id="spot-reset"></div></div>
@@ -196,6 +208,8 @@ const STACK_OPTIONS=[
  {key:'50+',band:'40+',lo:50,hi:Infinity,loInc:true,hiInc:false,row:1}
 ];
 const COORDS_8=[[50,113],[20,106],[8,61],[25,20],[50,16],[75,20],[92,61],[80,106]],COORDS_9=[[50,119],[18,111],[8,65],[20,21],[40,17],[60,17],[80,21],[92,65],[82,111]];
+const MOBILE_COORDS_8=[[50,276],[20,276],[8,148],[25,20],[50,20],[75,20],[92,148],[80,276]],MOBILE_COORDS_9=[[50,276],[18,276],[8,148],[20,20],[40,20],[60,20],[80,20],[92,148],[82,276]];
+const mobileTable=()=>matchMedia('(max-width:600px)').matches;
 const BANDS={'1-9':[1,10],'10-19':[10,20],'20-39':[20,40],'40+':[40,Infinity]},HANDS=[];for(let r=0;r<13;r++)for(let c=0;c<13;c++)HANDS.push(getHandName(r,c));
 let state={tableMax:8,dealerSeat:3,pos:'MP',stack:'20-39',range:'20-25',action:'open',opponentSeat:null,hand:'A9s',condition:null,variant:null};
 const $=id=>document.getElementById(id),partitionCache=new Map();
@@ -228,7 +242,7 @@ function lookupAppHand(input){const selected=selectAppChart(input);if(!selected.
 function domainIntersects(a,b){const lo=Math.max(a.lo,b.lo),hi=Math.min(a.hi,b.hi);if(lo<hi)return true;if(lo>hi)return false;return containsBB(a,lo)&&containsBB(b,lo);}
 function anyCoverage(scenario,opp){const node=CHARTS[state.pos]?.[state.stack]?.[scenario]?.[opp];if(!node)return false;const r=currentRange();if(scenario==='rejam'||scenario==='vs_rejam')return domainIntersects(r,{lo:1,hi:30,loInc:true,hiInc:true});if(scenario==='vs_limp')return domainIntersects(r,{lo:15,hi:Infinity,loInc:true,hiInc:false});if(scenario==='vs_raise'&&node.variants)return responseRules().sourceRouting.vs_raise.some(route=>node.variants[route.key]&&domainIntersects(r,{lo:route.minInclusive??1,hi:route.maxExclusive??Infinity,loInc:true,hiInc:false}));return true;}
 function aiEligibility(seat){const pos=positionAtSeat(seat),list=getPositionsList();if(seat===0||list.indexOf(pos)<=list.indexOf(state.pos))return{ok:false,reason:'ALL-IN после нашего опена: только игроки после нас.'};if(!anyCoverage('vs_rejam',pos))return{ok:false,reason:'Нет чарта колла репуша для этого противостояния/стека.'};if(['vs_raise','rejam','vs_limp'].includes(state.action)&&state.opponentSeat!==null)return{ok:false,reason:'Этот чарт — после нашего опена. Сначала сбросьте рейз/лимп до нас.'};
- if(state.action==='open'){const first=activeParts().map(p=>DatabaseEngine.lookupHand(DATABASE,{...engineInput(p.probe),scenario:'open'}));if(first.length&&first.every(r=>r.status==='resolved'&&r.action==='open_push'))return{ok:false,reason:'По этому споту мы уже опен-пушим: колл ответного пуша неприменим.'};if(first.length&&first.every(r=>r.status==='resolved'&&r.action?.startsWith('limp')))return{ok:false,reason:'Колл репуша описан после опен-рейза, не после лимпа.'};}
+
  return{ok:true,reason:'Наш опен-рейз → ALL-IN '+pos};}
 function setAllIn(seat,e){e?.stopPropagation();if(!aiEligibility(seat).ok)return;const remove=state.action==='vs_rejam'&&state.opponentSeat===seat;clearScenario();if(!remove){state.opponentSeat=seat;state.action='vs_rejam';}renderAll();}
 function setLimp(seat,e){e?.stopPropagation();if(state.pos!=='BB'||positionAtSeat(seat)!=='SB'||!anyCoverage('vs_limp','SB'))return;const remove=state.action==='vs_limp'&&state.opponentSeat===seat;clearScenario();if(!remove){state.opponentSeat=seat;state.action='vs_limp';}renderAll();}
@@ -335,7 +349,7 @@ function cellAppearance(hand,selected){
 function contrastText(hex){const rgb=hex.replace('#','').match(/.{2}/g)?.map(v=>parseInt(v,16)/255);if(!rgb||rgb.length!==3)return'#111';const l=rgb.map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return .2126*l[0]+.7152*l[1]+.0722*l[2]>.179?'#111':'#fff';}
 function makeButton(text,className,onClick){const b=document.createElement('button');b.type='button';b.className=className;b.textContent=text;b.dataset.control=className.split(' ')[0]+':'+text;b.onclick=onClick;return b;}
 function renderMiniTable(){
- const wrap=$('mini-table');wrap.replaceChildren();const felt=document.createElement('div');felt.className='poker-table-felt';wrap.append(felt);const list=getPositionsList(),coords=state.tableMax===9?COORDS_9:COORDS_8;wrap.style.height=state.tableMax===9?'148px':'140px';
+ const wrap=$('mini-table');wrap.replaceChildren();const felt=document.createElement('div');felt.className='poker-table-felt';wrap.append(felt);const list=getPositionsList(),coords=mobileTable()?(state.tableMax===9?MOBILE_COORDS_9:MOBILE_COORDS_8):(state.tableMax===9?COORDS_9:COORDS_8);wrap.style.height=mobileTable()?'406px':state.tableMax===9?'148px':'140px';
  for(let s=0;s<list.length;s++){const pos=positionAtSeat(s),hero=s===0,group=document.createElement('div');group.className='seat-group';group.dataset.seat=s;group.style.left=coords[s][0]+'%';group.style.top=coords[s][1]+'px';const before=list.indexOf(pos)<list.indexOf(state.pos),isSelected=state.opponentSeat===s;
  const b=makeButton(pos,'seat'+(hero?' hero-seat':'')+(s===state.dealerSeat?' has-btn':'')+(isSelected?(before?' has-raiser':' has-3bet'):''),()=>setDealer(s));b.dataset.control='dealer:'+s;b.setAttribute('aria-pressed',String(s===state.dealerSeat));b.setAttribute('aria-label',`Дилер на месте ${s+1}: ${pos}${hero?', ваше место':''}`);group.append(b);
  const bar=document.createElement('div');bar.className='seat-actions-bar';
@@ -367,6 +381,7 @@ function renderMatrixAndVerdict(){
  const source=$('source-note');source.textContent=`База: ${DATABASE.summary.uniqueCharts} чартов. ${selected.adaptation==='bb_vs_sb_limp_25_to_30'?'Адаптация 25–<30 BB: чарт 20–25 без изменения рук. ':selected.adaptation==='conditional_push_call_below_30'?'Условная альтернатива <30 BB перенесена из подписи чарта 30+. ':selected.sourceKey?'Источник: '+selected.sourceKey+' BB. ':''}${appearance.mixed?'Двухцветная клетка: альтернативы без заданных частот. ':''}${dec.status==='needs_resolution'?'Исходник не задаёт однозначного решения.':''}`;
 }
 function renderAll(){const focus=document.activeElement?.dataset?.control;state.pos=heroPosition();if(state.opponentSeat!==null&&['vs_raise','rejam'].includes(state.action)&&!anyCoverage(state.action,opponent())){const alternative=state.action==='vs_raise'?'rejam':'vs_raise';if(anyCoverage(alternative,opponent())){state.action=alternative;state.condition=null;state.variant=null;}}const variants=engineScenario()==='open'?rawSlot()?.variants:null;if(variants&&!variants[state.variant])state.variant=variants.tight?'tight':Object.keys(variants)[0];renderMiniTable();renderControls();renderMatrixAndVerdict();if(focus)[...document.querySelectorAll('[data-control]')].find(el=>el.dataset.control===focus)?.focus({preventScroll:true});}
+matchMedia('(max-width:600px)').addEventListener('change',()=>renderAll());
 for(const max of[8,9])$('btn-'+max+'max').onclick=()=>setTableMax(max);
 $('matrix').addEventListener('keydown',e=>{const dirs={ArrowLeft:[0,-1],ArrowRight:[0,1],ArrowUp:[-1,0],ArrowDown:[1,0]};if(!dirs[e.key])return;const cells=[...$('matrix').children],idx=cells.indexOf(e.target);if(idx<0)return;e.preventDefault();const[dr,dc]=dirs[e.key],r=Math.max(0,Math.min(12,Math.floor(idx/13)+dr)),c=Math.max(0,Math.min(12,idx%13+dc));cells[r*13+c]?.focus();});
 renderAll();
