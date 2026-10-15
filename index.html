@@ -410,6 +410,7 @@ function selectAliasedChart(input,alias){
  return{...selected,chart,adaptation:alias.id,sourcePosition:alias.sourcePosition??input.position,sourceOpponent:alias.sourceOpponent,callAddedHands:calls,callAlternativeHands:alternatives,changedHands};
 }
 function sourceDescription(selected){
+ if(selected.coverageExtension){const {sourceLabel,rangeLabel}=selected.coverageExtension;return`Адаптация: единственный доступный чарт (${sourceLabel}) показан для всей вкладки ${rangeLabel}. `+sourceDescription({...selected,coverageExtension:undefined});}
  if(selected.external)return`Дополнение: poker-practice, MTT ${selected.external.anchor} BB; частоты из внешней таблицы. `;
  if(selected.adaptation==='bb_vs_sb_limp_25_to_30')return'Адаптация 25–<30 BB: чарт 20–25 без изменения рук. ';
  if(selected.adaptation==='conditional_push_call_below_30')return'Условная альтернатива <30 BB перенесена из подписи чарта 30+. ';
@@ -492,13 +493,24 @@ function relevantConditions(){
  return [...new Map(conditions.map(c=>[JSON.stringify(c),c])).values()];
 }
 function displayLabel(d){const r=currentRange();if(d.lo===d.hi)return d.lo+' BB';if(d.lo===r.lo&&d.hi===r.hi&&d.loInc===r.loInc&&d.hiInc===r.hiInc)return r.key+' BB';if(d.lo===r.lo&&d.loInc===r.loInc)return(d.hiInc?'≤':'<')+d.hi+' BB';if(d.hi===r.hi&&d.hiInc===r.hiInc)return(d.loInc?'≥':'>')+d.lo+' BB';return(d.loInc?'':'>' )+d.lo+'–'+(d.hiInc?'':'<')+d.hi+' BB';}
+// User-approved UI adaptation: do not ask the user to choose between one
+// available chart and empty states. Preserve the source probe (and all its
+// hand decisions), while presenting it over the complete selected stack tab.
+// Never merge two supported stack conditions or hide a data/variant error.
+function singleAvailableChart(parts,domain){
+ if(parts.length<2)return parts;
+ const available=parts.filter(p=>p.selection.status==='ok'&&p.selection.chart);
+ if(available.length!==1||parts.some(p=>p!==available[0]&&p.selection.status!=='no_data'))return parts;
+ const source=available[0],coverageExtension={sourceLabel:source.label,rangeLabel:domain.key+' BB',sourceProbe:source.probe,sourceLo:source.lo,sourceHi:source.hi};
+ return[{...source,lo:domain.lo,hi:domain.hi,loInc:domain.loInc,hiInc:domain.hiInc,key:'segment_0',label:domain.key+' BB',selection:{...source.selection,coverageExtension}}];
+}
 function getPartitions(){
  const cacheKey=JSON.stringify([state.pos,state.range,state.action,opponent(),state.variant]);if(partitionCache.has(cacheKey))return partitionCache.get(cacheKey);
  const domain=currentRange(),low=domain.lo,high=domain.hi,conditions=relevantConditions(),cuts=new Set([low]);if(Number.isFinite(high))cuts.add(high);for(const c of conditions)for(const n of Object.values(c))if(n>low&&n<high)cuts.add(n);
  const sorted=[...cuts].sort((a,b)=>a-b),atoms=[];
  for(let i=0;i<sorted.length;i++){const x=sorted[i];if(x===high){if(domain.hiInc)atoms.push({lo:x,hi:x,loInc:true,hiInc:true,probe:x});break;}if(x!==low||domain.loInc)atoms.push({lo:x,hi:x,loInc:true,hiInc:true,probe:x});const next=sorted[i+1]??high;atoms.push({lo:x,hi:next,loInc:false,hiInc:false,probe:Number.isFinite(next)?x+(next-x)/2:x+Math.max(1,x)});}
  const parts=[];for(const atom of atoms){const selection=selectAppChart(engineInput(atom.probe));const signatures=HANDS.map(hand=>{const r=lookupAppHand(engineInput(atom.probe,hand));return[r.status,r.action,r.actions,r.key];});const signature=JSON.stringify([selection.status,selection.sourceKey,selection.chart,signatures,conditions.map(c=>matchesCondition(atom.probe,c))]);const last=parts.at(-1);if(last&&last.signature===signature){last.hi=atom.hi;last.hiInc=atom.hiInc;}else parts.push({...atom,signature,selection});}
- const answer=parts.map((d,i)=>({...d,key:'segment_'+i,label:displayLabel(d)}));partitionCache.set(cacheKey,answer);return answer;
+ const answer=singleAvailableChart(parts.map((d,i)=>({...d,key:'segment_'+i,label:displayLabel(d)})),domain);partitionCache.set(cacheKey,answer);return answer;
 }
 function getConditionalOptions(){const parts=getPartitions();if(parts.length<=1)return[];const selectedSignature=p=>JSON.stringify([p.selection.status,p.selection.sourceKey,p.selection.chart]);if(parts.some(p=>selectedSignature(p)!==selectedSignature(parts[0])))return parts;if(state.pos==='SB'&&state.action==='open'&&state.range==='10-12')return[];const decisions=parts.map(p=>decisionAt(p.probe,state.hand));return decisions.every(d=>JSON.stringify(d)===JSON.stringify(decisions[0]))?[]:parts;}
 
@@ -613,6 +625,7 @@ function renderControls(){
 }
 function renderCoachNotes(selected,decision){
  const notes=[],add=text=>notes.push(text),parts=activeParts(),key=selected.chart?getRawKeyForHand(state.hand,selected.chart):null;
+ if(selected.coverageExtension)add(`Для этой ситуации в источнике есть только чарт ${selected.coverageExtension.sourceLabel}. Он показан для всей вкладки ${selected.coverageExtension.rangeLabel} по согласованной адаптации. Исходный диапазон рук сохранён; точного отдельного чарта для остальных значений стека нет.`);
  let tip='';
  const onlyRepush=state.action==='rejam'&&state.opponentSeat!==null&&!anyCoverage('vs_raise',opponent());
  if(onlyRepush)tip='Только чарт репуша. Рука вне него — не обязательно фолд: возможный колл здесь не описан.';
