@@ -394,7 +394,7 @@ function rawSlot(){const scenario=engineScenario(),alias=sourceAliasFor(state.po
 function leafCharts(node){return!node?[]:node.variants?Object.values(node.variants).flatMap(leafCharts):node.legend&&node.ranges?[node]:[];}
 function scopedCharts(){const node=rawSlot();if(engineScenario()==='open'&&node?.variants)return state.variant?leafCharts(node.variants[state.variant]):[];return leafCharts(node);}
 function matchesCondition(bb,c={}){return(c.minInclusive===undefined||bb>=c.minInclusive)&&(c.minExclusive===undefined||bb>c.minExclusive)&&(c.maxInclusive===undefined||bb<=c.maxInclusive)&&(c.maxExclusive===undefined||bb<c.maxExclusive);}
-function concisePlan(label){label=label.replace(/\s*(?:только\s+)?при\s+(\d+)\s*bb\+/gi,(m,n)=>currentRange().lo>=Number(n)?'':m);return label.replace(/^Опен-рейз\s*\/\s*/,'').replace(/^План на 3-бет:\s*/,'').split(/\s+ИЛИ\s+/).map(line=>line.replace(/колл 3-бета/gi,'Колл 3-бет').replace(/^фолд на 3-бет/i,'Фолд на 3-бет')).join('\n');}
+function concisePlan(label){label=label.replace(/\s*(?:только\s+)?при\s+(\d+)\s*bb\+/gi,(m,n)=>currentRange().lo>=Number(n)?'':m);return label.replace(/^Опен-рейз(?:\s*\/\s*|$)/,'').replace(/^План на 3-бет:\s*/,'').split(/\s+ИЛИ\s+/).map(line=>line.replace(/колл 3-бета/gi,'Колл 3-бета').replace(/^фолд на 3-бет/i,'Фолд на 3-бет')).join('\n');}
 function matchingAdaptation(input){return APP_ADAPTATIONS.extensions.find(e=>input.position===e.position&&input.opponent===e.opponent&&input.scenario===e.scenario&&input.bb>=e.minInclusive&&input.bb<e.maxExclusive);}
 
 function sourceAliasFor(position,scenario,opp,bb){return(APP_ADAPTATIONS.sourceAliases??[]).find(a=>a.position===position&&a.scenario===scenario&&a.opponents.includes(opp)&&(bb===undefined?domainIntersects(currentRange(),{lo:a.minInclusive??1,hi:a.maxExclusive??Infinity,loInc:true,hiInc:false}):matchesCondition(bb,a)));}
@@ -644,8 +644,9 @@ function decisionAt(bb,hand){
  if(state.action==='vs_raise'){const selected=unifiedDefense();if(selected.status!=='ok')return result(selected.status,...(missing[selected.status]??['НЕТ ДАННЫХ','']));return selected.external?externalDecision(selected,hand):selected.rows[hand].decision;}
  const selected=selectAppChart(engineInput(bb,hand));if(selected.status!=='ok'){const m=missing[selected.status]??['НЕТ ДАННЫХ',selected.status];return result(selected.status,...m);}
  if(selected.external)return externalDecision(selected,hand);
- const chart=selected.chart,key=getRawKeyForHand(hand,chart),entry=chart.legend.find(e=>e.key===key);if(key===null)return result('data_conflict',...missing.data_conflict);
+ const chart=selected.chart,key=getRawKeyForHand(hand,chart),entry=effectiveEntry(chart.legend.find(e=>e.key===key));if(key===null)return result('data_conflict',...missing.data_conflict);
  if(state.action==='faced_3bet'){
+  if(entry?.scopedGeneric)return result('needs_resolution','ОТВЕТ НЕ УКАЗАН','');
   if(key==='fold')return result('invalid_spot','ВНЕ ОПЕН-ДИАПАЗОНА','Эта рука не открывается по выбранному чарту.');
   if(state.stack==='20-39'){if(key==='broke')return result('resolved','4-БЕТ ПУШ');if(key==='call')return result('resolved','КОЛЛ 3-БЕТА');if(key==='blue')return result('resolved','ФОЛД НА 3-БЕТ');}
   if(state.stack==='40+'){if(key==='blue')return result('resolved','ФОЛД НА 3-БЕТ');if(['call','call_oop','call_40plus'].includes(key)||key==='call_50plus'&&bb>=50)return result('resolved','КОЛЛ 3-БЕТА');if(key==='broke'||key==='fourbet_value')return result('category','4-БЕТ ВЭЛЬЮ','Размер не указан — не обязательно пуш.');if(key==='fourbet_bluff')return result('category','4-БЕТ БЛЕФ');}
@@ -700,6 +701,8 @@ function getSingleClearDecision(hand,selected=getActiveChart()){
 function segmentFor(hand,selected){
  if(selected.unified)return null;
  if(selected.external)return null;
+ const openEntry=['open','vs_rejam'].includes(engineScenario())?effectiveEntry(selected.chart.legend.find(e=>e.key===getRawKeyForHand(hand,selected.chart))):null;
+ if(openEntry?.scopedAction||openEntry?.scopedGeneric||openEntry?.stackScoped&&openEntry.scopedOptionCount===1)return null;
  const scenario=engineScenario(),key=getRawKeyForHand(hand,selected.chart),sourceOpponent=selected.sourceOpponent??opponent();
  if(selected.changedHands?.includes(hand))return null;
  if(selected.callAddedHands?.includes(hand))return null;
@@ -709,12 +712,50 @@ function segmentFor(hand,selected){
  return DATABASE.segments[scenario]?.find(e=>e.position===(selected.sourcePosition??state.pos)&&e.opponent===sourceOpponent&&e.hand===hand&&(!e.stack||e.stack===selected.sourceKey)&&(!e.sourceStack||e.sourceStack===selected.sourceKey));
 }
 function effectiveShortAction(hand){if(state.action!=='open'||state.stack!=='10-19')return null;const results=activeParts().map(p=>lookupAppHand(engineInput(p.probe,hand)));return results.length&&results.every(r=>r.status==='resolved'&&r.action===results[0].action)?results[0].action:null;}
-function effectiveEntry(entry){if(state.action==='vs_raise'){if(entry.key==='jam_lt30_or_bluff'&&activeParts().every(p=>p.probe>=30))return{...entry,key:'bluff',label:'3-бет блеф',color:getActiveChart().chart.legend.find(e=>e.key==='bluff')?.color??'#ffc764'};if(entry.key==='3bet_jam_or_flat_25_30'){const p=activeParts();if(p.every(p=>p.probe<25))return{...entry,key:'3bet_jam',label:'Пуш',color:'#e48073'};if(p.every(p=>p.probe>=25&&p.probe<30))return{...entry,label:'Пуш ИЛИ Колл'};}const parts=activeParts();if(entry.key==='jam_lt30_or_call'&&parts.every(p=>p.probe>=30)||entry.key==='jam_lt20_flat_20plus'&&parts.every(p=>p.probe>=20))return{...entry,key:'call',label:'Колл',color:getActiveChart().chart.legend.find(e=>e.key==='call')?.color??'#84a189'};if(entry.key==='jam_lt30_or_call'&&parts.every(p=>p.probe<30))return{...entry,label:'Пуш ИЛИ Колл'};}if(state.stack==='40+'&&entry.key==='call_40plus')return{...entry,label:'Опен-рейз / колл 3-бета'};if(state.range==='50+'&&entry.key==='call_50plus')return{...entry,label:'Опен-рейз / колл 3-бета'};if(state.action!=='open'||state.stack!=='10-19')return entry;const hands=getActiveChart().chart?.ranges[entry.key]??[],action=hands.length?effectiveShortAction(hands[0]):null;if(action==='open_push')return{...entry,key:'effective_push',label:'Опен-пуш',color:'#84a189'};if(action==='open_raise')return{...entry,key:'effective_raise',label:'Опен-рейз',color:'#e48073'};if(action==='open_raise_fold')return{...entry,key:'effective_raise_fold',label:'Опен-рейз / фолд на пуш',color:'#e48073'};return entry;}
+function legacyEffectiveEntry(entry){if(state.action==='vs_raise'){if(entry.key==='jam_lt30_or_bluff'&&activeParts().every(p=>p.probe>=30))return{...entry,key:'bluff',label:'3-бет блеф',color:getActiveChart().chart.legend.find(e=>e.key==='bluff')?.color??'#ffc764'};if(entry.key==='3bet_jam_or_flat_25_30'){const p=activeParts();if(p.every(p=>p.probe<25))return{...entry,key:'3bet_jam',label:'Пуш',color:'#e48073'};if(p.every(p=>p.probe>=25&&p.probe<30))return{...entry,label:'Пуш ИЛИ Колл'};}const parts=activeParts();if(entry.key==='jam_lt30_or_call'&&parts.every(p=>p.probe>=30)||entry.key==='jam_lt20_flat_20plus'&&parts.every(p=>p.probe>=20))return{...entry,key:'call',label:'Колл',color:getActiveChart().chart.legend.find(e=>e.key==='call')?.color??'#84a189'};if(entry.key==='jam_lt30_or_call'&&parts.every(p=>p.probe<30))return{...entry,label:'Пуш ИЛИ Колл'};}if(state.stack==='40+'&&entry.key==='call_40plus')return{...entry,label:'Опен-рейз / колл 3-бета'};if(state.range==='50+'&&entry.key==='call_50plus')return{...entry,label:'Опен-рейз / колл 3-бета'};if(state.action!=='open'||state.stack!=='10-19')return entry;const hands=getActiveChart().chart?.ranges[entry.key]??[],action=hands.length?effectiveShortAction(hands[0]):null;if(action==='open_push')return{...entry,key:'effective_push',label:'Опен-пуш',color:'#84a189'};if(action==='open_raise')return{...entry,key:'effective_raise',label:'Опен-рейз',color:'#e48073'};if(action==='open_raise_fold')return{...entry,key:'effective_raise_fold',label:'Опен-рейз / фолд на пуш',color:'#e48073'};return entry;}
+// Display only stack-valid branches. The source database remains unchanged.
+function scopedOpenEntry(entry){
+ if(!entry||engineScenario()!=='open')return entry;
+ if(state.action==='open'&&state.stack==='10-19'){
+  const hand=getActiveChart().chart?.ranges[entry.key]?.[0],action=hand?effectiveShortAction(hand):null;
+  const labels={fold:['Фолд','#d4d7dd'],open_push:['Опен-пуш','#84a189'],open_raise:['Опен-рейз','#e48073'],open_raise_fold:['Опен-рейз / фолд на пуш','#e48073'],limp_call:['Лимп / колл рейза <3.5x','#84a189'],limp_fold:['Лимп / фолд на рейз','#671657'],limp_jam:['Лимп / пуш на рейз','#73dddc']};
+  if(labels[action])return{...entry,key:'effective_'+action,label:labels[action][0],color:labels[action][1],scopedAction:action};
+  if(hand&&activeParts().every(p=>lookupAppHand(engineInput(p.probe,hand)).status==='needs_resolution'))return{...entry,key:'effective_unknown',label:'Не указано для выбранного стека',color:'#4b5563',scopedAction:'unknown'};
+  if(entry.key==='limp_jam'&&state.range==='10-12')return{...entry,label:'Лимп / пуш на рейз с 12 BB'};
+  if(entry.key==='jam_raise_fold'&&state.range==='15-19')return{...entry,label:'Опен-рейз / фолд на пуш при >15 BB'};
+ }
+ const parts=activeParts(),guard=/\s*при\s*(<=|>=|≤|≥|<|>)\s*(\d+(?:\.\d+)?)\s*bb|\s*при\s*(\d+(?:\.\d+)?)\s*bb\+/gi;
+ const sourceOptions=entry.label.split(/\s+ИЛИ\s+/i);let changed=false;
+ let options=sourceOptions.map(text=>{
+  const constraints=[...text.matchAll(guard)];if(!constraints.length)return text;
+  const verdicts=constraints.map(m=>{const op=m[1]??'>=',n=Number(m[2]??m[3]),condition={[['<','<=','≤'].includes(op)?(op==='<'?'maxExclusive':'maxInclusive'):(op==='>'?'minExclusive':'minInclusive')]:n};
+   // Probe boundaries as well as intervals, including the unbounded 50+ tab.
+   const outcomes=[];for(const part of parts){const points=[part.probe];for(const x of [part.lo,part.hi,n])if(Number.isFinite(x)&&containsBB(part,x))points.push(x);if(n>part.lo&&n<part.hi){points.push((part.lo+n)/2,Number.isFinite(part.hi)?(n+part.hi)/2:n+1);}outcomes.push(...points.map(bb=>matchesCondition(bb,condition)));}return outcomes.every(Boolean)?'all':outcomes.every(x=>!x)?'none':'some';});
+  if(verdicts.includes('none')){changed=true;return text.split(/\s*\/\s*/)[0];}
+  return text.replace(guard,(...args)=>{const offset=args.at(-2),index=constraints.findIndex(m=>m.index===offset);if(verdicts[index]==='all'){changed=true;return'';}return args[0];});
+ });
+ options=[...new Set(options)];if(options.some(x=>/^Опен-рейз\s*\//i.test(x)))options=options.filter(x=>!/^Опен-рейз$/i.test(x));
+ const generic=options.length===1&&/^Опен-рейз$/i.test(options[0])&&changed;
+ return{...entry,label:options.join(' ИЛИ '),...(generic?{key:'effective_open_raise',color:'#e48073'}:{}),stackScoped:changed,scopedGeneric:generic,scopedOptionCount:options.length};
+}
+function effectiveEntry(entry){
+ if(!entry)return entry;
+ if(state.action==='vs_rejam'){
+  const hand=getActiveChart().chart?.ranges[entry.key]?.[0],values=hand?activeParts().map(p=>lookupAppHand(engineInput(p.probe,hand))):[];
+  if(values.length&&values.every(r=>r.status==='resolved'&&r.action===values[0].action)){
+   if(values[0].action==='fold')return{...entry,key:'effective_rejam_fold',label:'Фолд',color:'#d4d7dd',scopedAction:'fold'};
+   if(values[0].action==='call')return{...entry,key:'effective_rejam_call',label:'Колл репуша',color:'#84a189',scopedAction:'call'};
+  }
+ }
+ return engineScenario()==='open'?scopedOpenEntry(entry):legacyEffectiveEntry(entry);
+}
+
 function cellAppearance(hand,selected){
  if(selected.unified&&!selected.external)return selected.rows[hand].appearance;
  if(selected.external){const weights=selected.external.weights[hand],mixed=weights.filter(w=>w>0).length>1,background=externalGradient(selected.external,weights);return{background,text:mixed?'#fff':contrastText(background),mixed};}
  if(selected.status!=='ok')return{background:'#282c37',text:'#9ca3af',mixed:false};
- const key=getRawKeyForHand(hand,selected.chart),entry=selected.chart.legend.find(e=>e.key===key),segment=segmentFor(hand,selected);
+ const key=getRawKeyForHand(hand,selected.chart),entry=effectiveEntry(selected.chart.legend.find(e=>e.key===key)),segment=segmentFor(hand,selected);
+ if(entry?.scopedAction==='fold')return{background:'#d4d7dd',text:'#111',mixed:false};
  const action=effectiveShortAction(hand);if(entry&&['open_push','open_raise','open_raise_fold'].includes(action)){const background=action==='open_push'?'#84a189':'#e48073';return{background,text:contrastText(background),mixed:false};}
  if(segment){const q=segment.quadrants;return{background:`linear-gradient(${q.topLeft},${q.topLeft}) left top / 50% 50% no-repeat, linear-gradient(${q.topRight},${q.topRight}) right top / 50% 50% no-repeat, linear-gradient(${q.bottomLeft},${q.bottomLeft}) left bottom / 50% 50% no-repeat, linear-gradient(${q.bottomRight},${q.bottomRight}) right bottom / 50% 50% no-repeat`,text:'#fff',mixed:true};}
  const responseColor=state.action==='vs_raise'&&key==='jam_lt30_or_bluff'&&activeParts().every(p=>p.probe>=30)?(selected.chart.legend.find(e=>e.key==='bluff')?.color??'#ffc764'):state.action==='vs_raise'&&['jam_lt30_or_call','jam_lt20_flat_20plus'].includes(key)&&activeParts().every(p=>p.probe>=(key==='jam_lt30_or_call'?30:20))?(selected.chart.legend.find(e=>e.key==='call')?.color??'#84a189'):null;const background=responseColor??entry?.color??'#d4d7dd';return{background,text:contrastText(background),mixed:false};
@@ -786,7 +827,7 @@ function renderCoachNotes(selected,decision){
 
 function renderMatrixAndVerdict(){
  const selected=getActiveChart(),chart=selected.chart,matrix=$('matrix'),focused=document.activeElement?.dataset?.hand;matrix.replaceChildren();
- for(const hand of HANDS){const key=chart?getRawKeyForHand(hand,chart):null,entry=chart?.legend.find(e=>e.key===key),appearance=cellAppearance(hand,selected),cell=makeButton(hand,'cell'+(hand.length===2?' pair':'')+(state.hand===hand?' selected':'')+(appearance.mixed?' mixed-background':''),()=>setHand(hand));cell.dataset.hand=hand;cell.disabled=!chart;if(selected.external){const d=externalDecision(selected,hand);cell.setAttribute('aria-label',hand+' — '+d.main+(d.sub?' — '+d.sub:''));cell.title=d.main+(d.sub?' · '+d.sub:'');}if(selected.unified&&!selected.external){const d=selected.rows[hand].decision;cell.title=d.main+(d.sub?' · '+d.sub:'');}cell.setAttribute('aria-pressed',String(state.hand===hand));if(selected.unified&&!selected.external)cell.setAttribute('aria-label',hand+' — '+selected.rows[hand].decision.main+' — '+selected.rows[hand].decision.sub);else if(!selected.external)cell.setAttribute('aria-label',hand+(entry?' — '+entry.label:chart?' — вне диапазона':' — нет данных'));cell.style.background=appearance.background;cell.style.color=appearance.text;matrix.append(cell);}
+ for(const hand of HANDS){const key=chart?getRawKeyForHand(hand,chart):null,entry=effectiveEntry(chart?.legend.find(e=>e.key===key)),appearance=cellAppearance(hand,selected),cell=makeButton(hand,'cell'+(hand.length===2?' pair':'')+(state.hand===hand?' selected':'')+(appearance.mixed?' mixed-background':''),()=>setHand(hand));cell.dataset.hand=hand;cell.disabled=!chart;if(selected.external){const d=externalDecision(selected,hand);cell.setAttribute('aria-label',hand+' — '+d.main+(d.sub?' — '+d.sub:''));cell.title=d.main+(d.sub?' · '+d.sub:'');}if(selected.unified&&!selected.external){const d=selected.rows[hand].decision;cell.title=d.main+(d.sub?' · '+d.sub:'');}cell.setAttribute('aria-pressed',String(state.hand===hand));if(selected.unified&&!selected.external)cell.setAttribute('aria-label',hand+' — '+selected.rows[hand].decision.main+' — '+selected.rows[hand].decision.sub);else if(!selected.external)cell.setAttribute('aria-label',hand+(entry?' — '+entry.label:chart?' — вне диапазона':' — нет данных'));cell.style.background=appearance.background;cell.style.color=appearance.text;matrix.append(cell);}
  if(focused)matrix.querySelector(`[data-hand="${focused}"]`)?.focus({preventScroll:true});
  const dec=getSingleClearDecision(state.hand,selected),appearance=cellAppearance(state.hand,selected),overlay=$('empty-overlay');overlay.hidden=Boolean(chart);overlay.replaceChildren();if(!chart){const h=document.createElement('h3');h.textContent=dec.main;const p=document.createElement('p');p.textContent=dec.sub;overlay.append(h,p);}
  const banner=$('verdict-banner');banner.style.background=appearance.background;banner.style.color=appearance.text;banner.classList.toggle('mixed-background',appearance.mixed);banner.dataset.status=dec.status;$('verdict-hand').textContent=state.hand;$('verdict-main').textContent=dec.main;$('verdict-sub').textContent=dec.sub;
