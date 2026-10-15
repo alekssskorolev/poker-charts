@@ -659,7 +659,7 @@ function decisionAt(bb,hand){
  if(raw.status==='resolved'){if(state.action==='rejam'&&raw.action==='fold')return result('outside_repush','НЕ РЕПУШ',anyCoverage('vs_raise',opponent())?'Другие ответы — в защите против рейза.':'');const labels=ACTIONS[raw.action]??[raw.action,''];return result('resolved',...labels);}
  if(raw.status==='mixed')return result('mixed',raw.actions.map(a=>state.action==='rejam'&&a==='fold'?'НЕ РЕПУШ':(ACTIONS[a]??[a])[0]).join(' или '));
  if(state.action==='open'&&entry){
-  if(entry.label.includes(' ИЛИ '))return result('mixed','ВАРИАНТЫ ВХОДА',entry.label.split(/\s+ИЛИ\s+/).join('\n'));
+  if(entry.label.includes(' ИЛИ ')){const options=entry.label.split(/\s+ИЛИ\s+/);if(options.every(text=>/^Опен-рейз(?:\s*\/|$)/i.test(text)))return result('category','ОПЕН-РЕЙЗ',options.map(text=>concisePlan(text).replace(/Колл 3-бет(?!а)/g,'Колл 3-бета')).join('\n'));return result('mixed','ВАРИАНТЫ ВХОДА',options.join('\n'));}
   if(entry.label.startsWith('Опен-рейз'))return result('category','ОПЕН-РЕЙЗ',concisePlan(entry.label));
   if(entry.label.startsWith('Лимп'))return result('category','ЛИМП',entry.label.replace(/^Лимп\s*\/\s*/,''));
  }
@@ -684,10 +684,11 @@ function openPushPlan(hand){
   const outcomes=samples.map(bb=>DatabaseEngine.lookupHand(DATABASE,{position:state.pos,opponent:opp,scenario:'vs_rejam',bb,hand}));
   let label='нет данных';if(outcomes.length&&outcomes.every(r=>r.status==='resolved'&&r.action===outcomes[0].action))label=outcomes[0].action==='call'?'колл':outcomes[0].action==='fold'?'фолд':'нет данных';
   else if(outcomes.some(r=>r.status==='resolved'))label='зависит от стека — нажмите AI';
+  if(label==='нет данных')continue;
   if(!groups.has(label))groups.set(label,[]);groups.get(label).push(opp);
  }
  if(!groups.size)return null;
- return groups.size===1?'На пуш: '+[...groups.keys()][0]+'.':'На пуш: '+[...groups].map(([label,ps])=>ps.join('/')+' — '+label).join('; ')+'.';
+ return groups.size===1&&[...groups.values()][0].length===opponents.length?'На пуш: '+[...groups.keys()][0]+'.':'На пуш: '+[...groups].map(([label,ps])=>ps.join('/')+' — '+label).join('; ')+'.';
 }
 
 function getSingleClearDecision(hand,selected=getActiveChart()){
@@ -750,9 +751,9 @@ function renderCoachNotes(selected,decision){
  let tip='';
  const onlyRepush=state.action==='rejam'&&state.opponentSeat!==null&&!anyCoverage('vs_raise',opponent());
  if(onlyRepush)tip='Только чарт репуша. Рука вне него — не обязательно фолд: возможный колл здесь не описан.';
- else if(state.action==='open'&&state.range==='1-9')tip=decision.main==='ФОЛД'?'При 7–8 BB возможен более широкий пуш. Но эту руку чарт не подтверждает — автоматического пуша нет.':'Основа — чарт на 10 BB. При 7–8 BB возможен более широкий пуш, особенно с поздних позиций и анте.';
+
  else if(decision.status==='needs_resolution')tip='Для этой руки исходник не задаёт полного решения в выбранных условиях. Не считайте это ни фолдом, ни разрешением на пуш.';
- if(openPushPlan(state.hand)){tip='Ответ на небольшой 3-бет не указан. На all-in смотрите план под опен-рейзом или нажмите AI под соперником.';add('План на пуш взят из исходных чартов колла репуша после нашего открытия. Позиции в подписи — соперники, которые пушат; стек — эффективный против соответствующего соперника. Это не рекомендация против небольшого 3-бета.');}
+ if(openPushPlan(state.hand)){add('Ответ на небольшой 3-бет не указан. На all-in смотрите план под опен-рейзом или нажмите AI под соперником.');add('План на пуш взят из исходных чартов колла репуша после нашего открытия. Позиции в подписи — соперники, которые пушат; стек — эффективный против соответствующего соперника. Это не рекомендация против небольшого 3-бета.');}
  if(state.action==='faced_3bet'&&state.stack==='10-19'&&decision.main==='ОТВЕТ НЕ УКАЗАН')tip='Для обычного небольшого 3-бета подходящей таблицы нет. Не переносите сюда ответ на all-in. Если соперник пушит, нажмите AI под ним.';
  if(selected.external)tip=`Внешняя таблица на ${selected.external.anchor} BB. В диапазоне ${state.range} BB — приближённый ориентир, не точное решение для каждого стека.`;
  if(selected.unified&&selected.partial)tip='Источник описывает только 3-бет/репуш. Для тёмно-серых клеток колл или фолд не определён — это не обязательный фолд.';
@@ -766,6 +767,7 @@ function renderCoachNotes(selected,decision){
  }
  if(state.opponentSeat!==null)add(`Стек против ${opponent()} — эффективный: меньший из вашего стека и стека этого соперника.`);
  else add('При первом входе учитывайте стеки игроков за вами: короткие стеки могут репушить. Не ориентируйтесь только на свой стек.');
+ if(state.action==='open'&&state.range==='1-9')add('Основа — чарт на 10 BB. При 7–8 BB возможен более широкий пуш, особенно с поздних позиций и анте. Это не автоматическое разрешение пушить руки вне чарта.');
  if(state.action==='open'&&state.range==='1-9')add('Чем тайтовее соперники коллируют, тем шире может быть пуш. Против частых коллов и больших стеков не расширяйтесь автоматически. Точного нового диапазона для 5–8 BB в базе нет.');
  if(['vs_raise','rejam'].includes(state.action)&&state.opponentSeat!==null)add('Базовый ориентир для опена — около 2,3–2,5 BB. Против большего рейза защищайтесь тайтовее; минрейз может позволять более широкий колл.');
  if(key==='soft')add('Мягкий стол: за вами слабые пассивные игроки и мало сквизов. Против сильных игроков за вами пограничный колл хуже.');
