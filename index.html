@@ -14,16 +14,20 @@
  .action-chip{min-width:25px;min-height:17px;padding:2px 3px;font-size:10.5px;border-radius:4px;display:flex;align-items:center;justify-content:center}
  .hero-repush-chip{min-width:44px;font-size:9.5px}
 }
+
+.coach-tip{font-size:14px;line-height:1.4;color:#e2e8f0;background:#192736;border-left:3px solid #6098c4;padding:8px 10px;border-radius:6px}.coach-tip[hidden]{display:none}.coach-notes{background:var(--bg-panel);border:1px solid #343b47;border-radius:8px;font-size:14px;line-height:1.5;color:#d4dbe5}.coach-notes summary{min-height:44px;padding:11px 12px;cursor:pointer;color:#e2e8f0;font-weight:650;touch-action:manipulation}.coach-notes summary:focus-visible{outline:2px solid #fbbf24;outline-offset:2px}.coach-notes[open] summary{border-bottom:1px solid #343b47}.coach-notes #coach-notes-body{padding:10px 12px;display:grid;gap:10px}.coach-notes p{margin:0;overflow-wrap:anywhere}
 </style></head><body><main class="app-container">
   <section class="panel" aria-label="Стол и стек">
     <div class="top-bar"><div class="mode-switch" role="group" aria-label="Размер стола"><button type="button" class="mode-btn" id="btn-8max">8-MAX</button><button type="button" class="mode-btn" id="btn-9max">9-MAX</button></div><div id="spot-reset"></div></div>
     <div class="poker-table-wrap" id="mini-table" role="group" aria-label="Выбор дилера. Ваше место всегда снизу."></div>
-    <div class="stack-line"><span class="stack-label">Стек (BB):</span><div class="stack-rows"><div class="btn-row" id="stack-row" role="group" aria-label="Короткие стеки"></div><div class="btn-row" id="stack-row-deep" role="group" aria-label="Средние и глубокие стеки"></div></div></div>
+    <div class="stack-line"><span class="stack-label" title="Против выбранного соперника — меньший из ваших двух стеков. При первом входе учитывайте стеки игроков за вами.">Эффективный стек (BB):</span><div class="stack-rows"><div class="btn-row" id="stack-row" role="group" aria-label="Короткие стеки"></div><div class="btn-row" id="stack-row-deep" role="group" aria-label="Средние и глубокие стеки"></div></div></div>
   </section>
   <section class="panel" id="action-panel" aria-label="Действие"><div class="btn-row" id="action-row"></div><div class="btn-row" id="sub-condition-row" role="group" aria-label="Дополнительное условие стека" hidden></div><div class="btn-row" id="variant-row" role="group" aria-label="Вариант SB" hidden></div><p class="hint" id="spot-hint" hidden></p></section>
   <section class="verdict-banner" id="verdict-banner" aria-live="polite" aria-atomic="true"><div class="verdict-left"><div class="verdict-hand" id="verdict-hand"></div></div><div class="verdict-right"><div class="verdict-main-action" id="verdict-main"></div><div class="verdict-sub-note" id="verdict-sub"></div></div></section>
+  <aside class="coach-tip" id="coach-tip" aria-live="polite" hidden></aside>
   <div class="matrix-wrapper"><div class="matrix" id="matrix" role="group" aria-label="Выбор стартовой руки"></div><div class="empty-overlay" id="empty-overlay" hidden></div></div>
   <section class="legend" id="legend" aria-label="Легенда чарта"></section>
+  <details class="coach-notes" id="coach-notes"><summary>Подсказки к ситуации</summary><div id="coach-notes-body"></div></details>
   <p class="footer-note" id="source-note"></p>
 </main>
 <script>"use strict";
@@ -106,8 +110,118 @@ const APP_ADAPTATIONS = {
           ]
         }
       }
+    },
+    {
+      "id": "mp_early_training",
+      "position": "MP",
+      "scenario": "vs_raise",
+      "opponents": [
+        "UTG+1",
+        "UTG+2"
+      ],
+      "sourceOpponent": "UTG",
+      "minInclusive": 20,
+      "onlyIfMissing": true,
+      "reason": "Training paragraph 663: MP defense is similar against UTG, UTG+1 and UTG+2. Do not alias native short-stack rejam charts."
+    },
+    {
+      "id": "bu_early_conservative",
+      "position": "BU",
+      "scenario": "vs_raise",
+      "opponents": [
+        "UTG+1",
+        "UTG+2"
+      ],
+      "sourceOpponent": "UTG",
+      "minInclusive": 20,
+      "onlyIfMissing": true,
+      "reason": "Conservative adjacent-opener alias with same hero position and stack; not an original chart."
+    },
+    {
+      "id": "bu_hj_conservative",
+      "position": "BU",
+      "scenario": "vs_raise",
+      "opponents": [
+        "HJ"
+      ],
+      "sourceOpponent": "MP",
+      "minInclusive": 20,
+      "onlyIfMissing": true,
+      "reason": "Conservative adjacent-opener alias without widening hands or changing stack."
+    },
+    {
+      "id": "bb_early_conservative",
+      "position": "BB",
+      "scenario": "vs_raise",
+      "opponents": [
+        "UTG+1",
+        "UTG+2"
+      ],
+      "sourceOpponent": "UTG",
+      "minInclusive": 20,
+      "onlyIfMissing": true,
+      "reason": "Same hero position and depth. Only 20-29 BB sources exist; do not extend them to deep BB passive defense.",
+      "maxExclusive": 30
+    },
+    {
+      "id": "bb_hj_conservative",
+      "position": "BB",
+      "scenario": "vs_raise",
+      "opponents": [
+        "HJ"
+      ],
+      "sourceOpponent": "MP",
+      "minInclusive": 20,
+      "onlyIfMissing": true,
+      "reason": "Conservative adjacent-opener alias without extra hands; depth kept at 20-29 BB.",
+      "maxExclusive": 30
+    },
+    {
+      "id": "co_early_conservative",
+      "position": "CO",
+      "scenario": "vs_raise",
+      "opponents": [
+        "UTG+1",
+        "UTG+2"
+      ],
+      "sourceOpponent": "UTG",
+      "minInclusive": 50,
+      "onlyIfMissing": true,
+      "reason": "Use existing CO vs UTG 50+ chart as conservative adjacent-opener base."
+    },
+    {
+      "id": "co_mp_training",
+      "position": "CO",
+      "scenario": "vs_raise",
+      "opponents": [
+        "MP"
+      ],
+      "sourceOpponent": "MP",
+      "minInclusive": 50,
+      "onlyIfMissing": true,
+      "reason": "Training paragraphs 228-231: derive CO vs MP from BU vs MP, narrowing fringe calls. The concrete examples and all-pairs exception concern the discussed 50+ BB source. Do not extrapolate to shallower stacks.",
+      "sourcePosition": "BU",
+      "callTrims": {
+        "50+": {
+          "removeCall": [
+            "A6s",
+            "A7s",
+            "65s",
+            "ATo"
+          ],
+          "callToThreeBetFold": [
+            "K9s",
+            "Q9s",
+            "J9s"
+          ]
+        }
+      }
     }
-  ]
+  ],
+  "trainingNotes": {
+    "source": "Транскрибация покерного обучения (префлоп).txt",
+    "policy": "Contextual qualitative notes, no newly invented numeric push ranges; source charts remain immutable. Existing SB-vs-HJ additions remain user-approved approximations, not training originals."
+  }
 };
 const CHARTS=DATABASE.charts;
 const DatabaseEngine=(()=>{
@@ -275,36 +389,39 @@ function setHand(hand){const focus=document.activeElement?.dataset?.hand;state.h
 function getHandName(r,c){return r===c?RANKS[r]+RANKS[c]:r<c?RANKS[r]+RANKS[c]+'s':RANKS[c]+RANKS[r]+'o';}
 function engineScenario(){return state.action==='faced_3bet'?'open':state.action;}
 function engineInput(bb,hand=state.hand){return{position:state.pos,opponent:opponent(),bb,stackBand:state.stack,scenario:engineScenario(),variant:state.variant??undefined,hand};}
-function rawSlot(){const slot=CHARTS[state.pos]?.[state.stack];return engineScenario()==='open'?slot?.open:slot?.[engineScenario()]?.[chartSourceOpponent(state.pos,engineScenario(),opponent())];}
+function rawSlot(){const scenario=engineScenario(),alias=sourceAliasFor(state.pos,scenario,opponent()),slot=CHARTS[alias?.sourcePosition??state.pos]?.[state.stack];return scenario==='open'?slot?.open:slot?.[scenario]?.[alias?.sourceOpponent??opponent()];}
 function leafCharts(node){return!node?[]:node.variants?Object.values(node.variants).flatMap(leafCharts):node.legend&&node.ranges?[node]:[];}
 function scopedCharts(){const node=rawSlot();if(engineScenario()==='open'&&node?.variants)return state.variant?leafCharts(node.variants[state.variant]):[];return leafCharts(node);}
 function matchesCondition(bb,c={}){return(c.minInclusive===undefined||bb>=c.minInclusive)&&(c.minExclusive===undefined||bb>c.minExclusive)&&(c.maxInclusive===undefined||bb<=c.maxInclusive)&&(c.maxExclusive===undefined||bb<c.maxExclusive);}
 function concisePlan(label){label=label.replace(/\s*(?:только\s+)?при\s+(\d+)\s*bb\+/gi,(m,n)=>currentRange().lo>=Number(n)?'':m);return label.replace(/^Опен-рейз\s*\/\s*/,'').replace(/^План на 3-бет:\s*/,'').split(/\s+ИЛИ\s+/).map(line=>line.replace(/колл 3-бета/gi,'Колл 3-бет').replace(/^фолд на 3-бет/i,'Фолд на 3-бет')).join('\n');}
 function matchingAdaptation(input){return APP_ADAPTATIONS.extensions.find(e=>input.position===e.position&&input.opponent===e.opponent&&input.scenario===e.scenario&&input.bb>=e.minInclusive&&input.bb<e.maxExclusive);}
 
-function sourceAliasFor(position,scenario,opp){return(APP_ADAPTATIONS.sourceAliases??[]).find(a=>a.position===position&&a.scenario===scenario&&a.opponents.includes(opp));}
+function sourceAliasFor(position,scenario,opp,bb){return(APP_ADAPTATIONS.sourceAliases??[]).find(a=>a.position===position&&a.scenario===scenario&&a.opponents.includes(opp)&&(bb===undefined?domainIntersects(currentRange(),{lo:a.minInclusive??1,hi:a.maxExclusive??Infinity,loInc:true,hiInc:false}):matchesCondition(bb,a)));}
 function chartSourceOpponent(position,scenario,opp){return sourceAliasFor(position,scenario,opp)?.sourceOpponent??opp;}
 function selectAliasedChart(input,alias){
- const selected=DatabaseEngine.selectChart(DATABASE,{...input,opponent:alias.sourceOpponent});if(selected.status!=='ok')return selected;
+ const selected=DatabaseEngine.selectChart(DATABASE,{...input,position:alias.sourcePosition??input.position,opponent:alias.sourceOpponent});if(selected.status!=='ok')return selected;
  const rule=alias.callExtensions?.[selected.sourceKey],applies=rule&&(rule.minInclusive===undefined||input.bb>=rule.minInclusive);
- const calls=applies?rule.call??[]:[],alternatives=applies?rule.callAlternative??[]:[],chart=calls.length||alternatives.length?JSON.parse(JSON.stringify(selected.chart)):selected.chart;
+ const calls=applies?rule.call??[]:[],alternatives=applies?rule.callAlternative??[]:[],trim=alias.callTrims?.[selected.sourceKey],chart=calls.length||alternatives.length||trim?JSON.parse(JSON.stringify(selected.chart)):selected.chart,changedHands=[];
  const move=(hand,key)=>{for(const hands of Object.values(chart.ranges)){const idx=hands.indexOf(hand);if(idx>=0)hands.splice(idx,1);}chart.ranges[key]??=[];chart.ranges[key].push(hand);};
  if(calls.length){if(!chart.legend.some(e=>e.key==='call'))chart.legend.push({key:'call',label:'Колл (флэт)',color:'#84a189',css:'app-call'});for(const hand of calls)move(hand,'call');}
  for(const hand of alternatives)move(hand,rule.alternativeKey);
- return{...selected,chart,adaptation:alias.id,sourceOpponent:alias.sourceOpponent,callAddedHands:calls,callAlternativeHands:alternatives};
+ if(trim){const callKeys=['call','soft','fish_flat'];for(const hand of trim.removeCall??[]){for(const key of callKeys){const hs=chart.ranges[key]??[],idx=hs.indexOf(hand);if(idx>=0){hs.splice(idx,1);changedHands.push(hand);}}}for(const hand of trim.callToThreeBetFold??[]){if(callKeys.some(key=>chart.ranges[key]?.includes(hand))){move(hand,'3bet_fold');changedHands.push(hand);}}}
+ return{...selected,chart,adaptation:alias.id,sourcePosition:alias.sourcePosition??input.position,sourceOpponent:alias.sourceOpponent,callAddedHands:calls,callAlternativeHands:alternatives,changedHands};
 }
 function sourceDescription(selected){
  if(selected.adaptation==='bb_vs_sb_limp_25_to_30')return'Адаптация 25–<30 BB: чарт 20–25 без изменения рук. ';
  if(selected.adaptation==='conditional_push_call_below_30')return'Условная альтернатива <30 BB перенесена из подписи чарта 30+. ';
  if(selected.adaptation==='sb_early_from_utg')return`Адаптация: против ${opponent()} — чарт UTG, ${selected.sourceKey} BB. `;
  if(selected.adaptation==='sb_hj_from_mp_wider_call'){const added=[...(selected.callAddedHands??[]),...(selected.callAlternativeHands??[]).map(h=>h+' (пуш или колл)')];return`Адаптация: против HJ — чарт MP, ${selected.sourceKey} BB${added.length?'; расширение колла: '+added.join(', '):'; исходный диапазон сохранён'}. `;}
+ if(selected.adaptation==='co_mp_training')return'Адаптация по обучению: BU против MP, 50+ BB; пограничные коллы сужены для CO. ';
+ if(selected.adaptation&&selected.sourceOpponent)return`Адаптация: ${selected.sourcePosition} против ${selected.sourceOpponent}, ${selected.sourceKey} BB; исходные руки сохранены. `;
  return selected.sourceKey?'Источник: '+selected.sourceKey+' BB. ':'';
 }
 
-function selectAppChart(input){const alias=sourceAliasFor(input.position,input.scenario,input.opponent);if(alias)return selectAliasedChart(input,alias);const extension=matchingAdaptation(input);if(extension){const chart=CHARTS[extension.position]?.[extension.sourceBand]?.[extension.scenario]?.[extension.opponent]?.variants?.[extension.sourceKey];if(chart)return{status:'ok',stackBand:extension.sourceBand,sourceKey:extension.sourceKey,chart,adaptation:extension.id};}const selected=DatabaseEngine.selectChart(DATABASE,input);if(selected.status==='ok'&&input.position==='BB'&&input.scenario==='vs_raise'&&input.bb>=20&&input.bb<30){const upper=CHARTS.BB['20-39']?.vs_raise?.[input.opponent]?.variants?.['30+'];const conditional=upper?.ranges?.jam_lt30_or_call??[];const eligible=conditional.filter(h=>selected.chart.ranges['3bet_jam']?.includes(h));if(eligible.length){const chart=JSON.parse(JSON.stringify(selected.chart));chart.ranges['3bet_jam']=chart.ranges['3bet_jam'].filter(h=>!eligible.includes(h));chart.ranges.jam_lt30_or_call=eligible;chart.legend.push({...upper.legend.find(e=>e.key==='jam_lt30_or_call'),label:'Пуш при <30 bb ИЛИ Колл (флэт)'});return{...selected,chart,adaptation:'conditional_push_call_below_30'};}}return selected;}
+function selectAppChart(input){const alias=sourceAliasFor(input.position,input.scenario,input.opponent,input.bb);if(alias){const native=alias.onlyIfMissing?DatabaseEngine.selectChart(DATABASE,input):null;if(native?.status==='ok')return native;return selectAliasedChart(input,alias);}const extension=matchingAdaptation(input);if(extension){const chart=CHARTS[extension.position]?.[extension.sourceBand]?.[extension.scenario]?.[extension.opponent]?.variants?.[extension.sourceKey];if(chart)return{status:'ok',stackBand:extension.sourceBand,sourceKey:extension.sourceKey,chart,adaptation:extension.id};}const selected=DatabaseEngine.selectChart(DATABASE,input);if(selected.status==='ok'&&input.position==='BB'&&input.scenario==='vs_raise'&&input.bb>=20&&input.bb<30){const upper=CHARTS.BB['20-39']?.vs_raise?.[input.opponent]?.variants?.['30+'];const conditional=upper?.ranges?.jam_lt30_or_call??[];const eligible=conditional.filter(h=>selected.chart.ranges['3bet_jam']?.includes(h));if(eligible.length){const chart=JSON.parse(JSON.stringify(selected.chart));chart.ranges['3bet_jam']=chart.ranges['3bet_jam'].filter(h=>!eligible.includes(h));chart.ranges.jam_lt30_or_call=eligible;chart.legend.push({...upper.legend.find(e=>e.key==='jam_lt30_or_call'),label:'Пуш при <30 bb ИЛИ Колл (флэт)'});return{...selected,chart,adaptation:'conditional_push_call_below_30'};}}return selected;}
 function lookupAppHand(input){const selected=selectAppChart(input);if(!selected.adaptation)return DatabaseEngine.lookupHand(DATABASE,input);if(selected.status!=='ok')return selected;const hits=Object.entries(selected.chart.ranges).filter(([,hs])=>hs.includes(input.hand));if(!hits.length)return{status:'resolved',action:'fold',stackBand:selected.stackBand,sourceKey:selected.sourceKey,adaptation:selected.adaptation};if(hits.length!==1)return{status:'data_conflict'};const[key]=hits[0],entry=selected.chart.legend.find(e=>e.key===key);return entry?{status:'category',stackBand:selected.stackBand,sourceKey:selected.sourceKey,key,entry,adaptation:selected.adaptation}:{status:'data_conflict'};}
 function domainIntersects(a,b){const lo=Math.max(a.lo,b.lo),hi=Math.min(a.hi,b.hi);if(lo<hi)return true;if(lo>hi)return false;return containsBB(a,lo)&&containsBB(b,lo);}
-function anyCoverage(scenario,opp){const node=CHARTS[state.pos]?.[state.stack]?.[scenario]?.[chartSourceOpponent(state.pos,scenario,opp)];if(!node)return false;const r=currentRange();if(scenario==='rejam'||scenario==='vs_rejam')return domainIntersects(r,{lo:1,hi:30,loInc:true,hiInc:true});if(scenario==='vs_limp')return domainIntersects(r,{lo:15,hi:Infinity,loInc:true,hiInc:false});if(scenario==='vs_raise'&&node.variants)return responseRules().sourceRouting.vs_raise.some(route=>node.variants[route.key]&&domainIntersects(r,{lo:route.minInclusive??1,hi:route.maxExclusive??Infinity,loInc:true,hiInc:false}));return true;}
+function anyCoverage(scenario,opp){const alias=sourceAliasFor(state.pos,scenario,opp),node=CHARTS[alias?.sourcePosition??state.pos]?.[state.stack]?.[scenario]?.[alias?.sourceOpponent??opp];if(!node)return false;const r=currentRange();if(scenario==='rejam'||scenario==='vs_rejam')return domainIntersects(r,{lo:1,hi:30,loInc:true,hiInc:true});if(scenario==='vs_limp')return domainIntersects(r,{lo:15,hi:Infinity,loInc:true,hiInc:false});if(scenario==='vs_raise'&&node.variants)return responseRules().sourceRouting.vs_raise.some(route=>node.variants[route.key]&&domainIntersects(r,{lo:route.minInclusive??1,hi:route.maxExclusive??Infinity,loInc:true,hiInc:false}));return true;}
 function aiEligibility(seat){const pos=positionAtSeat(seat),list=getPositionsList();if(seat===0||list.indexOf(pos)<=list.indexOf(state.pos))return{ok:false,reason:'ALL-IN после нашего опена: только игроки после нас.'};if(!anyCoverage('vs_rejam',pos))return{ok:false,reason:'Нет чарта колла репуша для этого противостояния/стека.'};if(['vs_raise','rejam','vs_limp'].includes(state.action)&&state.opponentSeat!==null)return{ok:false,reason:'Этот чарт — после нашего опена. Сначала сбросьте рейз/лимп до нас.'};
 
  return{ok:true,reason:'Наш опен-рейз → ALL-IN '+pos};}
@@ -353,10 +470,11 @@ const ACTIONS={fold:['ФОЛД',''],open_push:['ОПЕН-ПУШ',''],open_raise:
 function responseDisplay(key,label,bb){
  const resolved=(main,sub='')=>result('category',main,sub);
  if(key==='jam_lt30_or_call')return bb<30?result('mixed','ПУШ или КОЛЛ'):resolved('КОЛЛ');
+ if(key==='jam_lt30_or_bluff')return bb<30?result('mixed','ПУШ или 3-БЕТ','Блеф'):resolved('3-БЕТ','Блеф');
  if(key==='3bet_jam_or_flat_25_30')return bb>=25&&bb<30?result('mixed','ПУШ или КОЛЛ'):resolved('ПУШ');
  if(key==='jam_lt20_flat_20plus')return resolved(bb<20?'ПУШ':'КОЛЛ');
  if(key==='value_3bet_25_30_or_jam_20_25')return bb<25?resolved('ПУШ'):bb<=30?resolved('3-БЕТ','Вэлью'):resolved('НЕТ ДАННЫХ','Условие категории: 20–30 BB');
- const known={'3bet_fold':['3-БЕТ','Фолд на 4-бет'],soft:['КОЛЛ','Только на очень мягком столе'],call:['КОЛЛ'],check:['ЧЕК'],jam:['ПУШ'],'3bet_jam':['ПУШ'],bluff:['3-БЕТ','Блеф'],value_3bet:['3-БЕТ','Вэлью'],broke:['3-БЕТ','Игра на стек'],'3bet_call':['3-БЕТ','Колл 4-бета'],'3bet_call_fold_jam':['3-БЕТ','Колл 4-бета / фолд на пуш'],flat_minraise:['КОЛЛ','Только против минрейза'],flat_raise_lt2_25:['КОЛЛ','Против опен-рейза <2.25x'],defend_minraise:['ЗАЩИТА','Только против минрейза'],fold:['ФОЛД']};
+ const known={'3bet_fold':['3-БЕТ','Фолд на 4-бет'],soft:['КОЛЛ','Только на очень мягком столе'],fish_flat:['КОЛЛ','Если рейзер или игроки за нами — слабые'],call:['КОЛЛ'],check:['ЧЕК'],jam:['ПУШ'],'3bet_jam':['ПУШ'],bluff:['3-БЕТ','Блеф'],value_3bet:['3-БЕТ','Вэлью'],broke:['3-БЕТ','Игра на стек'],'3bet_call':['3-БЕТ','Колл 4-бета'],'3bet_call_fold_jam':['3-БЕТ','Колл 4-бета / фолд на пуш'],flat_minraise:['КОЛЛ','Только против минрейза'],flat_raise_lt2_25:['КОЛЛ','Против опен-рейза <2.25x'],defend_minraise:['ЗАЩИТА','Только против минрейза'],fold:['ФОЛД']};
  if(known[key])return resolved(...known[key]);
  if(key==='bluff_20_25'||key==='bluff_25_30'||key==='value_3bet_25_30')return resolved('3-БЕТ',label.replace(/^3-бет\s*/i,''));
  const alternatives=label.split(/\s+ИЛИ\s+/i);
@@ -379,7 +497,7 @@ function decisionAt(bb,hand){
  if(state.pos==='SB'&&state.action==='open'&&state.range==='10-12'&&key==='limp_jam')return result('category','ЛИМП','Пуш на рейз: в источнике с 12 BB');
  const raw=lookupAppHand(engineInput(bb,hand));
  if(state.action==='open'&&state.stack==='10-19'&&raw.status==='needs_resolution')return result('needs_resolution','НУЖНО УТОЧНЕНИЕ',concisePlan(entry?.label??''));
- if(raw.status==='resolved'){if(state.action==='rejam'&&raw.action==='fold')return result('outside_repush','НЕ РЕПУШ','Другие ответы — в защите против рейза.');const labels=ACTIONS[raw.action]??[raw.action,''];return result('resolved',...labels);}
+ if(raw.status==='resolved'){if(state.action==='rejam'&&raw.action==='fold')return result('outside_repush','НЕ РЕПУШ',anyCoverage('vs_raise',opponent())?'Другие ответы — в защите против рейза.':'');const labels=ACTIONS[raw.action]??[raw.action,''];return result('resolved',...labels);}
  if(raw.status==='mixed')return result('mixed',raw.actions.map(a=>state.action==='rejam'&&a==='fold'?'НЕ РЕПУШ':(ACTIONS[a]??[a])[0]).join(' или '));
  if(state.action==='open'&&entry){
   if(entry.label.includes(' ИЛИ '))return result('mixed','ВАРИАНТЫ ВХОДА',entry.label.split(/\s+ИЛИ\s+/).join('\n'));
@@ -401,20 +519,21 @@ function getSingleClearDecision(hand,selected=getActiveChart()){
 }
 function segmentFor(hand,selected){
  const scenario=engineScenario(),key=getRawKeyForHand(hand,selected.chart),sourceOpponent=selected.sourceOpponent??opponent();
+ if(selected.changedHands?.includes(hand))return null;
  if(selected.callAddedHands?.includes(hand))return null;
  if(selected.callAlternativeHands?.includes(hand)){const push='#e48073',call=selected.chart.legend.find(e=>e.key==='call')?.color??'#84a189';return{quadrants:{topLeft:push,topRight:push,bottomLeft:call,bottomRight:call},frequencies:null};}
  if(selected.adaptation==='conditional_push_call_below_30'&&key==='jam_lt30_or_call')return DATABASE.segments.vs_raise?.find(e=>e.position===state.pos&&e.opponent===sourceOpponent&&e.hand===hand&&e.stack==='30+');
- if(scenario==='vs_raise'&&(key==='jam_lt30_or_call'&&activeParts().every(p=>p.probe>=30)||key==='3bet_jam_or_flat_25_30'&&activeParts().every(p=>p.probe<25)))return null;
- return DATABASE.segments[scenario]?.find(e=>e.position===state.pos&&e.opponent===sourceOpponent&&e.hand===hand&&(!e.stack||e.stack===selected.sourceKey)&&(!e.sourceStack||e.sourceStack===selected.sourceKey));
+ if(scenario==='vs_raise'&&(['jam_lt30_or_call','jam_lt30_or_bluff'].includes(key)&&activeParts().every(p=>p.probe>=30)||key==='3bet_jam_or_flat_25_30'&&activeParts().every(p=>p.probe<25)))return null;
+ return DATABASE.segments[scenario]?.find(e=>e.position===(selected.sourcePosition??state.pos)&&e.opponent===sourceOpponent&&e.hand===hand&&(!e.stack||e.stack===selected.sourceKey)&&(!e.sourceStack||e.sourceStack===selected.sourceKey));
 }
 function effectiveShortAction(hand){if(state.action!=='open'||state.stack!=='10-19')return null;const results=activeParts().map(p=>lookupAppHand(engineInput(p.probe,hand)));return results.length&&results.every(r=>r.status==='resolved'&&r.action===results[0].action)?results[0].action:null;}
-function effectiveEntry(entry){if(state.action==='vs_raise'){if(entry.key==='3bet_jam_or_flat_25_30'){const p=activeParts();if(p.every(p=>p.probe<25))return{...entry,key:'3bet_jam',label:'Пуш',color:'#e48073'};if(p.every(p=>p.probe>=25&&p.probe<30))return{...entry,label:'Пуш ИЛИ Колл'};}const parts=activeParts();if(entry.key==='jam_lt30_or_call'&&parts.every(p=>p.probe>=30)||entry.key==='jam_lt20_flat_20plus'&&parts.every(p=>p.probe>=20))return{...entry,key:'call',label:'Колл',color:getActiveChart().chart.legend.find(e=>e.key==='call')?.color??'#84a189'};if(entry.key==='jam_lt30_or_call'&&parts.every(p=>p.probe<30))return{...entry,label:'Пуш ИЛИ Колл'};}if(state.stack==='40+'&&entry.key==='call_40plus')return{...entry,label:'Опен-рейз / колл 3-бета'};if(state.range==='50+'&&entry.key==='call_50plus')return{...entry,label:'Опен-рейз / колл 3-бета'};if(state.action!=='open'||state.stack!=='10-19')return entry;const hands=getActiveChart().chart?.ranges[entry.key]??[],action=hands.length?effectiveShortAction(hands[0]):null;if(action==='open_push')return{...entry,key:'effective_push',label:'Опен-пуш',color:'#84a189'};if(action==='open_raise')return{...entry,key:'effective_raise',label:'Опен-рейз',color:'#e48073'};if(action==='open_raise_fold')return{...entry,key:'effective_raise_fold',label:'Опен-рейз / фолд на пуш',color:'#e48073'};return entry;}
+function effectiveEntry(entry){if(state.action==='vs_raise'){if(entry.key==='jam_lt30_or_bluff'&&activeParts().every(p=>p.probe>=30))return{...entry,key:'bluff',label:'3-бет блеф',color:getActiveChart().chart.legend.find(e=>e.key==='bluff')?.color??'#ffc764'};if(entry.key==='3bet_jam_or_flat_25_30'){const p=activeParts();if(p.every(p=>p.probe<25))return{...entry,key:'3bet_jam',label:'Пуш',color:'#e48073'};if(p.every(p=>p.probe>=25&&p.probe<30))return{...entry,label:'Пуш ИЛИ Колл'};}const parts=activeParts();if(entry.key==='jam_lt30_or_call'&&parts.every(p=>p.probe>=30)||entry.key==='jam_lt20_flat_20plus'&&parts.every(p=>p.probe>=20))return{...entry,key:'call',label:'Колл',color:getActiveChart().chart.legend.find(e=>e.key==='call')?.color??'#84a189'};if(entry.key==='jam_lt30_or_call'&&parts.every(p=>p.probe<30))return{...entry,label:'Пуш ИЛИ Колл'};}if(state.stack==='40+'&&entry.key==='call_40plus')return{...entry,label:'Опен-рейз / колл 3-бета'};if(state.range==='50+'&&entry.key==='call_50plus')return{...entry,label:'Опен-рейз / колл 3-бета'};if(state.action!=='open'||state.stack!=='10-19')return entry;const hands=getActiveChart().chart?.ranges[entry.key]??[],action=hands.length?effectiveShortAction(hands[0]):null;if(action==='open_push')return{...entry,key:'effective_push',label:'Опен-пуш',color:'#84a189'};if(action==='open_raise')return{...entry,key:'effective_raise',label:'Опен-рейз',color:'#e48073'};if(action==='open_raise_fold')return{...entry,key:'effective_raise_fold',label:'Опен-рейз / фолд на пуш',color:'#e48073'};return entry;}
 function cellAppearance(hand,selected){
  if(selected.status!=='ok')return{background:'#282c37',text:'#9ca3af',mixed:false};
  const key=getRawKeyForHand(hand,selected.chart),entry=selected.chart.legend.find(e=>e.key===key),segment=segmentFor(hand,selected);
  const action=effectiveShortAction(hand);if(entry&&['open_push','open_raise','open_raise_fold'].includes(action)){const background=action==='open_push'?'#84a189':'#e48073';return{background,text:contrastText(background),mixed:false};}
  if(segment){const q=segment.quadrants;return{background:`linear-gradient(${q.topLeft},${q.topLeft}) left top / 50% 50% no-repeat, linear-gradient(${q.topRight},${q.topRight}) right top / 50% 50% no-repeat, linear-gradient(${q.bottomLeft},${q.bottomLeft}) left bottom / 50% 50% no-repeat, linear-gradient(${q.bottomRight},${q.bottomRight}) right bottom / 50% 50% no-repeat`,text:'#fff',mixed:true};}
- const responseColor=state.action==='vs_raise'&&['jam_lt30_or_call','jam_lt20_flat_20plus'].includes(key)&&activeParts().every(p=>p.probe>=(key==='jam_lt30_or_call'?30:20))?(selected.chart.legend.find(e=>e.key==='call')?.color??'#84a189'):null;const background=responseColor??entry?.color??'#d4d7dd';return{background,text:contrastText(background),mixed:false};
+ const responseColor=state.action==='vs_raise'&&key==='jam_lt30_or_bluff'&&activeParts().every(p=>p.probe>=30)?(selected.chart.legend.find(e=>e.key==='bluff')?.color??'#ffc764'):state.action==='vs_raise'&&['jam_lt30_or_call','jam_lt20_flat_20plus'].includes(key)&&activeParts().every(p=>p.probe>=(key==='jam_lt30_or_call'?30:20))?(selected.chart.legend.find(e=>e.key==='call')?.color??'#84a189'):null;const background=responseColor??entry?.color??'#d4d7dd';return{background,text:contrastText(background),mixed:false};
 }
 function contrastText(hex){const rgb=hex.replace('#','').match(/.{2}/g)?.map(v=>parseInt(v,16)/255);if(!rgb||rgb.length!==3)return'#111';const l=rgb.map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return .2126*l[0]+.7152*l[1]+.0722*l[2]>.179?'#111':'#fff';}
 function makeButton(text,className,onClick){const b=document.createElement('button');b.type='button';b.className=className;b.textContent=text;b.dataset.control=className.split(' ')[0]+':'+text;b.onclick=onClick;return b;}
@@ -441,6 +560,32 @@ function renderControls(){
  const hint=$('spot-hint');hint.hidden=true;hint.textContent=state.action==='faced_3bet'?'На 3-бет — план из опен-чарта, не отдельная подстройка под игрока.':state.action==='vs_rejam'?'Мы открылись; соперник репушит. Пороги колла — накопительные.':'Мы репушим против опен-рейза. Пороги ≤15/20/25/30 перенесены по согласованной логике.';
  $('action-panel').hidden=actions.children.length===0&&conditionRow.hidden&&variants.hidden;
 }
+function renderCoachNotes(selected,decision){
+ const notes=[],add=text=>notes.push(text),parts=activeParts(),key=selected.chart?getRawKeyForHand(state.hand,selected.chart):null;
+ let tip='';
+ const onlyRepush=state.action==='rejam'&&state.opponentSeat!==null&&!anyCoverage('vs_raise',opponent());
+ if(onlyRepush)tip='Только чарт репуша. Рука вне него — не обязательно фолд: возможный колл здесь не описан.';
+ else if(state.action==='open'&&state.range==='1-9')tip=decision.main==='ФОЛД'?'При 7–8 BB возможен более широкий пуш. Но эту руку чарт не подтверждает — автоматического пуша нет.':'Основа — чарт на 10 BB. При 7–8 BB возможен более широкий пуш, особенно с поздних позиций и анте.';
+ else if(decision.status==='needs_resolution')tip='Для этой руки исходник не задаёт полного решения в выбранных условиях. Не считайте это ни фолдом, ни разрешением на пуш.';
+ $('coach-tip').textContent=tip;$('coach-tip').hidden=!tip;
+ if(state.opponentSeat!==null)add(`Стек против ${opponent()} — эффективный: меньший из вашего стека и стека этого соперника.`);
+ else add('При первом входе учитывайте стеки игроков за вами: короткие стеки могут репушить. Не ориентируйтесь только на свой стек.');
+ if(state.action==='open'&&state.range==='1-9')add('Чем тайтовее соперники коллируют, тем шире может быть пуш. Против частых коллов и больших стеков не расширяйтесь автоматически. Точного нового диапазона для 5–8 BB в базе нет.');
+ if(['vs_raise','rejam'].includes(state.action)&&state.opponentSeat!==null)add('Базовый ориентир для опена — около 2,3–2,5 BB. Против большего рейза защищайтесь тайтовее; минрейз может позволять более широкий колл.');
+ if(key==='soft')add('Мягкий стол: за вами слабые пассивные игроки и мало сквизов. Против сильных игроков за вами пограничный колл хуже.');
+ if(key==='fish_flat')add('Этот дополнительный колл рассчитан на слабого рейзера или слабых игроков за вами. Это не обязательный колл против сильного регуляра.');
+ if(state.pos==='SB'&&engineScenario()==='open'&&state.stack==='40+'&&state.variant==='tight')add('«Тайтовый» — вариант против BB, который много фолдит на стил SB (ориентир из курса: больше 40%). Это не универсальный вариант против неизвестного игрока.');
+ if(state.action==='vs_rejam')add('Это колл репуша после нашего открытия, не колл чужого опен-пуша. Против узкого диапазона репуша пограничные коллы хуже.');
+ if(state.action==='faced_3bet'){add('План на 3-бет зависит от его размера и позиции соперника. Против тайтового крупного 3-бета сужайте защиту; блеф-4-беты не обязательны.');if(state.range==='50+')add('50+ BB — общий диапазон. На 75+ и особенно 150+ BB план выставления может отличаться: не переносите короткостековый пуш на глубокий стек.');}
+ if(state.action==='rejam'&&key==='3bet_call'&&parts.every(p=>p.probe<25)&&!['AA','KK','QQ'].includes(state.hand))add('На 20–25 BB и короче автор чаще предпочитает прямой пуш сильной рукой вместо небольшого 3-бета для провокации. Это вариант линии, а не расширение диапазона.');
+ if(selected.adaptation==='co_mp_training')add('CO против MP: база BU против MP, суженная по принципу из курса. A6s, A7s, 65s и ATo исключены из коллов; K9s, Q9s, J9s переведены из колла в блеф-3-бет. Пары сохранены для 50+ BB. Против соперника, который не фолдит, блеф-3-бет не обязателен.');
+ if(selected.adaptation==='sb_hj_from_mp_wider_call')add('Расширение SB против HJ — согласованная адаптация на основе MP, не отдельный авторский чарт из курса.');
+ if(selected.adaptation&&selected.adaptation!=='co_mp_training'&&selected.adaptation!=='sb_hj_from_mp_wider_call')add('Подстановка — практический ориентир, не отдельный исходный чарт для этого противостояния.');
+ if(decision.status==='mixed'||selected.chart&&segmentFor(state.hand,selected))add('Два цвета означают варианты линии. Без отдельно заданной частоты это не инструкция играть 50/50.');
+ add('Базовые чарты не учитывают конкретную ICM-ситуацию. На баббле и финальном столе цена риска может менять пуши и коллы; одного размера стека недостаточно.');
+ const body=$('coach-notes-body');body.replaceChildren();for(const text of notes){const item=document.createElement('p');item.textContent=text;body.append(item);}
+}
+
 function renderMatrixAndVerdict(){
  const selected=getActiveChart(),chart=selected.chart,matrix=$('matrix'),focused=document.activeElement?.dataset?.hand;matrix.replaceChildren();
  for(const hand of HANDS){const key=chart?getRawKeyForHand(hand,chart):null,entry=chart?.legend.find(e=>e.key===key),appearance=cellAppearance(hand,selected),cell=makeButton(hand,'cell'+(hand.length===2?' pair':'')+(state.hand===hand?' selected':'')+(appearance.mixed?' mixed-background':''),()=>setHand(hand));cell.dataset.hand=hand;cell.disabled=!chart;cell.setAttribute('aria-pressed',String(state.hand===hand));cell.setAttribute('aria-label',hand+(entry?' — '+entry.label:chart?' — вне диапазона':' — нет данных'));cell.style.background=appearance.background;cell.style.color=appearance.text;matrix.append(cell);}
@@ -448,6 +593,7 @@ function renderMatrixAndVerdict(){
  const dec=getSingleClearDecision(state.hand,selected),appearance=cellAppearance(state.hand,selected),overlay=$('empty-overlay');overlay.hidden=Boolean(chart);overlay.replaceChildren();if(!chart){const h=document.createElement('h3');h.textContent=dec.main;const p=document.createElement('p');p.textContent=dec.sub;overlay.append(h,p);}
  const banner=$('verdict-banner');banner.style.background=appearance.background;banner.style.color=appearance.text;banner.classList.toggle('mixed-background',appearance.mixed);banner.dataset.status=dec.status;$('verdict-hand').textContent=state.hand;$('verdict-main').textContent=dec.main;$('verdict-sub').textContent=dec.sub;
  const legend=$('legend');legend.replaceChildren();if(chart)for(const entry of [...new Map(chart.legend.map(e=>{const v=effectiveEntry(e);return[v.key+'|'+v.color,v];})).values()]){const item=document.createElement('div');item.className='legend-item';const swatch=document.createElement('span');swatch.className='swatch';swatch.style.background=entry.color;const text=document.createElement('span');text.textContent=entry.label;item.append(swatch,text);legend.append(item);}
+ renderCoachNotes(selected,dec);
  const source=$('source-note');source.textContent=`База: ${DATABASE.summary.uniqueCharts} чартов. ${sourceDescription(selected)}${appearance.mixed?'Двухцветная клетка: альтернативы без заданных частот. ':''}${dec.status==='needs_resolution'?'Исходник не задаёт однозначного решения.':''}`;
 }
 function renderAll(){const focus=document.activeElement?.dataset?.control;state.pos=heroPosition();if(state.opponentSeat!==null&&['vs_raise','rejam'].includes(state.action)&&!anyCoverage(state.action,opponent())){const alternative=state.action==='vs_raise'?'rejam':'vs_raise';if(anyCoverage(alternative,opponent())){state.action=alternative;state.condition=null;state.variant=null;}}const variants=engineScenario()==='open'?rawSlot()?.variants:null;if(variants&&!variants[state.variant])state.variant=variants.tight?'tight':Object.keys(variants)[0];renderMiniTable();renderControls();renderMatrixAndVerdict();if(focus)[...document.querySelectorAll('[data-control]')].find(el=>el.dataset.control===focus)?.focus({preventScroll:true});}
