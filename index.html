@@ -649,6 +649,7 @@ function decisionAt(bb,hand){
   if(key==='fold')return result('invalid_spot','ВНЕ ОПЕН-ДИАПАЗОНА','Эта рука не открывается по выбранному чарту.');
   if(state.stack==='20-39'){if(key==='broke')return result('resolved','4-БЕТ ПУШ');if(key==='call')return result('resolved','КОЛЛ 3-БЕТА');if(key==='blue')return result('resolved','ФОЛД НА 3-БЕТ');}
   if(state.stack==='40+'){if(key==='blue')return result('resolved','ФОЛД НА 3-БЕТ');if(['call','call_oop','call_40plus'].includes(key)||key==='call_50plus'&&bb>=50)return result('resolved','КОЛЛ 3-БЕТА');if(key==='broke'||key==='fourbet_value')return result('category','4-БЕТ ВЭЛЬЮ','Размер не указан — не обязательно пуш.');if(key==='fourbet_bluff')return result('category','4-БЕТ БЛЕФ');}
+  if(state.stack==='10-19')return result('needs_resolution','ОТВЕТ НЕ УКАЗАН','На небольшой 3-бет; на пуш — кнопка AI.');
   return result('needs_resolution','НУЖНО УТОЧНЕНИЕ',concisePlan(entry?.label??''));
  }
  if(state.action==='vs_raise'||state.action==='vs_limp'){const display=responseDisplay(key,entry?.label??'',bb);if(display)return display;}
@@ -671,10 +672,29 @@ function decisionAt(bb,hand){
  }
  return result(raw.status,'НУЖНО УТОЧНЕНИЕ',concisePlan(entry?.label??'Источник не задаёт решение.'));
 }
+// A short-stack open is not a complete plan. Summarise only independently
+// supported calls of an all-in AFTER our open; never reuse open-shove calls.
+function openPushPlan(hand){
+ if(state.action!=='open'||state.opponentSeat!==null||state.stack!=='10-19')return null;
+ const opening=activeParts();if(!opening.length||!opening.every(p=>{const r=lookupAppHand(engineInput(p.probe,hand));return r.status==='resolved'&&['open_raise','open_raise_fold'].includes(r.action);}))return null;
+ const opponents=getPositionsList().slice(getPositionsList().indexOf(state.pos)+1),groups=new Map();
+ for(const opp of opponents){
+  const thresholds=Object.values(responseRules().rejamThresholds?.[state.pos]?.[opp]??{}).map(r=>r.callMaxInclusive).filter(Number.isFinite),samples=[];
+  for(const part of opening){const cuts=[part.lo,...thresholds.filter(n=>n>part.lo&&n<part.hi),part.hi].sort((a,b)=>a-b);for(let i=0;i<cuts.length;i++){const x=cuts[i];if(containsBB(part,x))samples.push(x);const next=cuts[i+1];if(next>x)samples.push((x+next)/2);}}
+  const outcomes=samples.map(bb=>DatabaseEngine.lookupHand(DATABASE,{position:state.pos,opponent:opp,scenario:'vs_rejam',bb,hand}));
+  let label='нет данных';if(outcomes.length&&outcomes.every(r=>r.status==='resolved'&&r.action===outcomes[0].action))label=outcomes[0].action==='call'?'колл':outcomes[0].action==='fold'?'фолд':'нет данных';
+  else if(outcomes.some(r=>r.status==='resolved'))label='зависит от стека — нажмите AI';
+  if(!groups.has(label))groups.set(label,[]);groups.get(label).push(opp);
+ }
+ if(!groups.size)return null;
+ return groups.size===1?'На пуш: '+[...groups.keys()][0]+'.':'На пуш: '+[...groups].map(([label,ps])=>ps.join('/')+' — '+label).join('; ')+'.';
+}
+
 function getSingleClearDecision(hand,selected=getActiveChart()){
  if(selected.unified&&selected.status==='ok')return selected.external?externalDecision(selected,hand):selected.rows[hand].decision;
  if(selected.status!=='ok')return result(selected.status,...(missing[selected.status]??['НЕТ ДАННЫХ',selected.status]));
- const decisions=activeParts().map(p=>decisionAt(p.probe,hand)),first=decisions[0];return decisions.every(d=>JSON.stringify(d)===JSON.stringify(first))?first:result('condition_required',...missing.condition_required);
+ const decisions=activeParts().map(p=>decisionAt(p.probe,hand)),first=decisions[0];const decision=decisions.every(d=>JSON.stringify(d)===JSON.stringify(first))?first:result('condition_required',...missing.condition_required);
+ const plan=decision.main==='ОПЕН-РЕЙЗ'&&!decision.sub?openPushPlan(hand):null;return plan?{...decision,sub:plan}:decision;
 }
 function segmentFor(hand,selected){
  if(selected.unified)return null;
@@ -732,6 +752,8 @@ function renderCoachNotes(selected,decision){
  if(onlyRepush)tip='Только чарт репуша. Рука вне него — не обязательно фолд: возможный колл здесь не описан.';
  else if(state.action==='open'&&state.range==='1-9')tip=decision.main==='ФОЛД'?'При 7–8 BB возможен более широкий пуш. Но эту руку чарт не подтверждает — автоматического пуша нет.':'Основа — чарт на 10 BB. При 7–8 BB возможен более широкий пуш, особенно с поздних позиций и анте.';
  else if(decision.status==='needs_resolution')tip='Для этой руки исходник не задаёт полного решения в выбранных условиях. Не считайте это ни фолдом, ни разрешением на пуш.';
+ if(openPushPlan(state.hand)){tip='Ответ на небольшой 3-бет не указан. На all-in смотрите план под опен-рейзом или нажмите AI под соперником.';add('План на пуш взят из исходных чартов колла репуша после нашего открытия. Позиции в подписи — соперники, которые пушат; стек — эффективный против соответствующего соперника. Это не рекомендация против небольшого 3-бета.');}
+ if(state.action==='faced_3bet'&&state.stack==='10-19'&&decision.main==='ОТВЕТ НЕ УКАЗАН')tip='Для обычного небольшого 3-бета подходящей таблицы нет. Не переносите сюда ответ на all-in. Если соперник пушит, нажмите AI под ним.';
  if(selected.external)tip=`Внешняя таблица на ${selected.external.anchor} BB. В диапазоне ${state.range} BB — приближённый ориентир, не точное решение для каждого стека.`;
  if(selected.unified&&selected.partial)tip='Источник описывает только 3-бет/репуш. Для тёмно-серых клеток колл или фолд не определён — это не обязательный фолд.';
  $('coach-tip').textContent=tip;$('coach-tip').hidden=!tip;
