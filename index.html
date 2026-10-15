@@ -382,7 +382,7 @@ function setTableMax(max){if(![8,9].includes(max)||max===state.tableMax)return;s
 function setRaiser(seat,e){e?.stopPropagation();const list=getPositionsList();if(seat===0||list.indexOf(positionAtSeat(seat))>=list.indexOf(state.pos))return;const remove=state.opponentSeat===seat&&['vs_raise','rejam','vs_limp'].includes(state.action);clearScenario();if(!remove){state.opponentSeat=seat;state.action='vs_raise';}renderAll();}
 function setThreeBetter(seat,e){e?.stopPropagation();const list=getPositionsList();if(seat===0||state.pos==='BB'||list.indexOf(positionAtSeat(seat))<=list.indexOf(state.pos))return;const remove=state.opponentSeat===seat&&['faced_3bet','vs_rejam'].includes(state.action);clearScenario();if(!remove){state.opponentSeat=seat;state.action='faced_3bet';}renderAll();}
 function setScenario(action){const allowed=availableScenarios();if(!allowed.some(x=>x.key===action))return;state.action=action;state.condition=null;state.variant=null;renderAll();}
-function availableScenarios(){if(state.opponentSeat===null)return[];const list=getPositionsList(),before=list.indexOf(opponent())<list.indexOf(state.pos);return before?[{key:'vs_raise',label:'На рейз'},{key:'rejam',label:'Репуш'}].filter(item=>anyCoverage(item.key,opponent())):[{key:'faced_3bet',label:'На 3-бет'},{key:'vs_rejam',label:'Колл репуша'}];}
+function availableScenarios(){if(state.opponentSeat===null)return[];const list=getPositionsList(),before=list.indexOf(opponent())<list.indexOf(state.pos);return before?[{key:'vs_raise',label:'Ответ на рейз'}].filter(item=>anyCoverage(item.key,opponent())):[{key:'faced_3bet',label:'На 3-бет'},{key:'vs_rejam',label:'Колл репуша'}];}
 function currentRange(){return STACK_OPTIONS.find(r=>r.key===state.range);}
 function containsBB(r,bb){return(r.loInc?bb>=r.lo:bb>r.lo)&&(r.hiInc?bb<=r.hi:bb<r.hi);}
 function setStack(key){const range=STACK_OPTIONS.find(r=>r.key===key);if(!range)return;state.range=key;state.stack=range.band;state.condition=null;state.variant=null;renderAll();}
@@ -410,6 +410,7 @@ function selectAliasedChart(input,alias){
  return{...selected,chart,adaptation:alias.id,sourcePosition:alias.sourcePosition??input.position,sourceOpponent:alias.sourceOpponent,callAddedHands:calls,callAlternativeHands:alternatives,changedHands};
 }
 function sourceDescription(selected){
+ if(selected.unified&&!selected.external){const base=selected.fullSource??selected.repushSource;return sourceDescription({...base,coverageExtension:selected.coverageExtension})+(selected.partial?'Частичный источник: известны только активные линии 3-бета/пуша. ':'')+(selected.mergedRepush?'Объединены защита против рейза и подходящие этому стеку линии репуша. ':'');}
  if(selected.coverageExtension){const {sourceLabel,rangeLabel}=selected.coverageExtension;return`Адаптация: единственный доступный чарт (${sourceLabel}) показан для всей вкладки ${rangeLabel}. `+sourceDescription({...selected,coverageExtension:undefined});}
  if(selected.external)return`Дополнение: poker-practice, MTT ${selected.external.anchor} BB; частоты из внешней таблицы. `;
  if(selected.adaptation==='bb_vs_sb_limp_25_to_30')return'Адаптация 25–<30 BB: чарт 20–25 без изменения рук. ';
@@ -457,7 +458,7 @@ function selectAppChart(input){
  return{status:'ok',stackBand:input.stackBand,sourceKey:'external_'+spec.anchor,chart:buildExternalChart(spec),adaptation:'external_preflop',external:spec};
 }
 function anyCoverage(scenario,opp){
- if(courseCoverage(scenario,opp))return true;
+ if(courseCoverage(scenario,opp)||scenario==='vs_raise'&&courseCoverage('rejam',opp))return true;
  if(scenario!=='vs_raise')return false;
  return EXTERNAL_PREFLOP.charts.some(c=>c.position===state.pos&&c.opponent===opp&&domainIntersects(currentRange(),{lo:c.minInclusive,hi:c.maxExclusive,loInc:true,hiInc:false}));
 }
@@ -466,6 +467,100 @@ function externalDecision(selected,hand){
  const parts=weights.flatMap((w,i)=>w>0?[{...actions[i],w}]:[]);
  const percent=w=>new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2}).format(w*100)+'%';
  return result(parts.length>1?'mixed':'category',parts.map(p=>p.name).join(' или '),parts.length>1?parts.map(p=>p.label+' '+percent(p.w)).join(' · '):'');
+}
+
+// A single response view. Native course data stays immutable. Independent
+// external solver tables are NOT mixed with the course's repush tables.
+const unifiedDefenseCache=new Map();
+function defenseAction(type,sub='',color){
+ const names={raise:'3-БЕТ',jam:'ПУШ',call:'КОЛЛ',fold:'ФОЛД',defend:'ЗАЩИТА',unknown:'НЕТ РЕКОМЕНДАЦИИ'};
+ const colors={raise:'#842415',jam:'#e48073',call:'#84a189',fold:'#d4d7dd',defend:'#7d9cbd',unknown:'#4b5563'};
+ return{type,main:names[type],sub,color:color??colors[type]};
+}
+function fullDefenseActions(key,bb){
+ const bucket=state.range,is20=bucket==='20-25',is25=bucket==='25-30',short=currentRange().hi<=30;
+ const raise=(sub='Вэлью',color)=>defenseAction('raise',sub,color),bluff=()=>raise('Блеф','#ffc764'),call=(sub='',color)=>defenseAction('call',sub,color),jam=()=>defenseAction('jam'),fold=()=>defenseAction('fold');
+ const soft=()=>call('Только на очень мягком столе'),min=()=>call('Только против минрейза','#7d9cbd');
+ const plans={
+  value_3bet:()=>[raise()],value_3bet_25_30:()=>is25?[raise()]:[],
+  '3bet_jam':()=>[jam()], '3bet_jam_or_bluff_25_30':()=>[jam(),...(is25?[bluff()]:[])], '3bet_jam_or_bluff_20_25':()=>[jam(),...(is20?[bluff()]:[])],
+  broke:()=>[raise('Игра на стек')],jam_lt30_or_call:()=>short?[jam(),call()]:[call()],call_or_bluff:()=>[call(),bluff()],
+  bluff:()=>[bluff()],optional_bluff:()=>[raise('Опциональный блеф','#ffc764')],jam_lt30_or_bluff:()=>short?[jam(),bluff()]:[bluff()],
+  call:()=>[call()],soft:()=>[soft()], '3bet_jam_or_flat_25_30':()=>is25?[jam(),call()]:[jam()],
+  bluff_25_30_or_bluff_20_25:()=>is20||is25?[bluff()]:[],bluff_20_25_or_bluff_25_30:()=>is20||is25?[bluff()]:[],
+  bluff_20_25:()=>is20?[bluff()]:[],bluff_25_30:()=>is25?[bluff()]:[],bluff_or_soft:()=>[bluff(),soft()],
+  bluff_25_30_or_flat_20_30:()=>[call(),...(is25?[bluff()]:[])], '3bet_call':()=>[raise('Колл 4-бета','#e48073')],
+  call_or_fold:()=>[call(),fold()], '3bet_fold':()=>[raise('Фолд на 4-бет','#ffc764')],
+  '3bet_call_75plus':()=>[raise(currentRange().hi<=75?'План на 4-бет для этого стека не указан':'Колл 4-бета от 75 BB; до 75 BB план не указан','#e48073')],
+  bluff_or_fold:()=>[bluff(),fold()],soft_or_fold:()=>[soft(),fold()],
+  broke_lt75:()=>[raise(currentRange().hi<=75?'Игра на стек':'Игра на стек при <75 BB; на 75+ план не задан')],
+  '3bet_call_75plus_or_broke_lt75':()=>[raise(currentRange().hi<=75?'Игра на стек':'До 75 BB — игра на стек; от 75 BB — колл 4-бета','#e48073')],
+  value_3bet_25_30_or_jam_20_25:()=>is20?[jam()]:is25?[raise()]:[],jam_lt20_flat_20plus:()=>currentRange().hi<=20?[jam()]:[call()],
+  flat_raise_lt2_25:()=>[call('Против опен-рейза <2,25x','#7d9cbd')],defend_minraise:()=>[defenseAction('defend','Только против минрейза')],flat_minraise:()=>[min()],
+  '3bet_call_fold_jam':()=>[raise('Колл 4-бета / фолд на пуш','#e48073')],flat_weak_blinds:()=>[call('Если игроки на блайндах слабые')],
+  bluff_20_25_or_fold:()=>is20?[bluff(),fold()]:[fold()], '3bet_jam_or_value_3bet_25_30':()=>[jam(),...(is25?[raise()]:[])],
+  call_or_bluff_25_30:()=>[call(),...(is25?[bluff()]:[])],call_or_value_3bet:()=>[call(),raise()],
+  fish_flat:()=>[call('Если рейзер или игроки за нами — слабые')],fold:()=>[]
+ };
+ return plans[key]?plans[key]():[defenseAction('unknown','Категория источника не расшифрована')];
+}
+function activeRepushActions(selected,input,hand,extended){
+ if(selected.status!=='ok')return[];
+ const hits=Object.entries(selected.chart.ranges).filter(([,hs])=>hs.includes(hand));
+ if(hits.length!==1)return[];
+ const rules=responseRules().rejamActionRules?.[input.position]?.[input.opponent]?.[hits[0][0]];
+ if(!rules)return[];
+ const r=currentRange(),answer=[];
+ for(const rule of rules){
+  if(rule.action==='jam'&&(extended?input.bb<=rule.maxInclusive:r.lo<rule.maxInclusive&&r.hi<=rule.maxInclusive))answer.push(defenseAction('jam'));
+  if(rule.action==='3bet_call')answer.push(defenseAction('raise','Колл ответного пуша','#842415'));
+ }
+ // Fold in a repush-only source means not shoving, not a complete passive
+ // defense. Never turn it into an unconditional preflop fold. Preserve the
+ // uncertainty of mixed/unreadable source cells instead of making a pure shove.
+ if(rules.some(r=>r.action.startsWith('unknown_')))for(const a of answer)a.sub='Вариант: часть исходной клетки не расшифрована';
+ else if(rules.some(r=>r.action==='fold'))for(const a of answer)a.sub='Вариант из смешанной клетки; частота не задана';
+ return answer;
+}
+function uniqueDefenseActions(actions){
+ const map=new Map();for(const a of actions){const key=a.type+'|'+a.sub;if(!map.has(key))map.set(key,a);}return[...map.values()];
+}
+function unifiedRow(actions,fullKnown){
+ actions=uniqueDefenseActions(actions);
+ if(!actions.length)actions=[fullKnown?defenseAction('fold'):defenseAction('unknown','Колл или фолд в источнике не описан')];
+ const names=[...new Set(actions.map(a=>a.main))],subs=actions.map(a=>a.sub?((names.length>1?a.main+': ':'')+a.sub):'').filter(Boolean);
+ const decision=result(actions.length>1?'mixed':actions[0].type==='unknown'?'uncovered':'category',names.join(' или '),[...new Set(subs)].join('\n'));
+ const colors=actions.map(a=>a.color),mixed=colors.length>1,background=mixed?`linear-gradient(to right, ${colors.flatMap((c,i)=>[`${c} ${i*100/colors.length}%`,`${c} ${(i+1)*100/colors.length}%`]).join(', ')})`:colors[0];
+ return{actions,decision,appearance:{background,text:mixed?'#fff':contrastText(background),mixed},label:actions.map(a=>a.main+(a.sub?' / '+a.sub:'')).join(' ИЛИ ')};
+}
+function unifiedDefense(){
+ const key=JSON.stringify([state.tableMax,state.pos,state.range,opponent(),state.variant]);if(unifiedDefenseCache.has(key))return unifiedDefenseCache.get(key);
+ const r=currentRange(),bb=Number.isFinite(r.hi)?r.lo+(r.hi-r.lo)/2:r.lo+1,input={...engineInput(bb),scenario:'vs_raise'};
+ const full=selectAppChart(input);
+ if(full.status==='ok'&&full.external){const selected={...full,unified:true,partial:false};unifiedDefenseCache.set(key,selected);return selected;}
+ // Never hide a real data/variant conflict behind a repush fallback.
+ if(!['ok','no_data'].includes(full.status)){unifiedDefenseCache.set(key,full);return full;}
+ let repushInput={...input,scenario:'rejam'},repush=selectAppChart(repushInput),extended=false;
+ if(full.status!=='ok'&&repush.status!=='ok'&&r.lo===30&&r.hi===40){repushInput={...repushInput,bb:30};repush=selectAppChart(repushInput);extended=repush.status==='ok';}
+ if(full.status!=='ok'&&repush.status!=='ok'){unifiedDefenseCache.set(key,full);return full;}
+ const rows={},ranges={},legend=[],groups=new Map();let mergedRepush=false;
+ for(const hand of HANDS){
+  const fullKey=full.status==='ok'?getRawKeyForHand(hand,full.chart):null;
+  let actions=full.status==='ok'?fullDefenseActions(fullKey,input.bb):[];
+  const supplemental=activeRepushActions(repush,repushInput,hand,extended);
+  for(const a of supplemental){
+   if(a.type==='jam'&&actions.some(x=>x.type==='jam'))continue;
+   // Keep the more detailed normal-defense 3-bet plan when it already exists.
+   if(a.type==='raise'&&actions.some(x=>x.type==='raise')){const existing=actions.find(x=>x.type==='raise');if(existing.sub==='Вэлью'&&a.sub==='Колл ответного пуша'){existing.sub='Вэлью / колл ответного пуша';if(full.status==='ok')mergedRepush=true;}continue;}
+   if(!actions.some(x=>x.type===a.type&&x.sub===a.sub)){actions.push(a);if(full.status==='ok')mergedRepush=true;}
+  }
+  const row=unifiedRow(actions,full.status==='ok');rows[hand]=row;
+  const signature=JSON.stringify(row.actions);if(!groups.has(signature)){const groupKey='unified_'+groups.size;groups.set(signature,groupKey);ranges[groupKey]=[];legend.push({key:groupKey,label:row.label,color:row.appearance.background});}
+  ranges[groups.get(signature)].push(hand);
+ }
+ const selected={...(full.status==='ok'?full:repush),status:'ok',unified:true,partial:full.status!=='ok',fullSource:full.status==='ok'?full:null,repushSource:repush.status==='ok'?repush:null,rows,chart:{ranges,legend},mergedRepush};
+ if(extended)selected.coverageExtension={sourceLabel:'30 BB',rangeLabel:r.key+' BB',sourceProbe:30};
+ unifiedDefenseCache.set(key,selected);return selected;
 }
 
 function lookupAppHand(input){const selected=selectAppChart(input);if(!selected.adaptation)return DatabaseEngine.lookupHand(DATABASE,input);if(selected.status!=='ok')return selected;const hits=Object.entries(selected.chart.ranges).filter(([,hs])=>hs.includes(input.hand));if(!hits.length)return{status:'resolved',action:'fold',stackBand:selected.stackBand,sourceKey:selected.sourceKey,adaptation:selected.adaptation};if(hits.length!==1)return{status:'data_conflict'};const[key]=hits[0],entry=selected.chart.legend.find(e=>e.key===key);return entry?{status:'category',stackBand:selected.stackBand,sourceKey:selected.sourceKey,key,entry,adaptation:selected.adaptation}:{status:'data_conflict'};}
@@ -512,10 +607,11 @@ function getPartitions(){
  const parts=[];for(const atom of atoms){const selection=selectAppChart(engineInput(atom.probe));const signatures=HANDS.map(hand=>{const r=lookupAppHand(engineInput(atom.probe,hand));return[r.status,r.action,r.actions,r.key];});const signature=JSON.stringify([selection.status,selection.sourceKey,selection.chart,signatures,conditions.map(c=>matchesCondition(atom.probe,c))]);const last=parts.at(-1);if(last&&last.signature===signature){last.hi=atom.hi;last.hiInc=atom.hiInc;}else parts.push({...atom,signature,selection});}
  const answer=singleAvailableChart(parts.map((d,i)=>({...d,key:'segment_'+i,label:displayLabel(d)})),domain);partitionCache.set(cacheKey,answer);return answer;
 }
-function getConditionalOptions(){const parts=getPartitions();if(parts.length<=1)return[];const selectedSignature=p=>JSON.stringify([p.selection.status,p.selection.sourceKey,p.selection.chart]);if(parts.some(p=>selectedSignature(p)!==selectedSignature(parts[0])))return parts;if(state.pos==='SB'&&state.action==='open'&&state.range==='10-12')return[];const decisions=parts.map(p=>decisionAt(p.probe,state.hand));return decisions.every(d=>JSON.stringify(d)===JSON.stringify(decisions[0]))?[]:parts;}
+function getConditionalOptions(){if(state.action==='vs_raise')return[];const parts=getPartitions();if(parts.length<=1)return[];const selectedSignature=p=>JSON.stringify([p.selection.status,p.selection.sourceKey,p.selection.chart]);if(parts.some(p=>selectedSignature(p)!==selectedSignature(parts[0])))return parts;if(state.pos==='SB'&&state.action==='open'&&state.range==='10-12')return[];const decisions=parts.map(p=>decisionAt(p.probe,state.hand));return decisions.every(d=>JSON.stringify(d)===JSON.stringify(decisions[0]))?[]:parts;}
 
 function activeParts(){const parts=getPartitions(),chosen=parts.find(p=>p.key===state.condition);return chosen?[chosen]:parts;}
 function getActiveChart(){
+ if(state.action==='vs_raise'&&state.opponentSeat!==null)return unifiedDefense();
  if(state.action!=='open'&&state.opponentSeat===null)return{status:'opponent_required'};
  if(state.action==='faced_3bet'&&state.stack==='1-9')return{status:'invalid_spot'};
  const selections=activeParts().map(p=>p.selection),first=selections[0];if(!first)return{status:'no_data'};
@@ -545,6 +641,7 @@ function responseDisplay(key,label,bb){
 }
 
 function decisionAt(bb,hand){
+ if(state.action==='vs_raise'){const selected=unifiedDefense();if(selected.status!=='ok')return result(selected.status,...(missing[selected.status]??['НЕТ ДАННЫХ','']));return selected.external?externalDecision(selected,hand):selected.rows[hand].decision;}
  const selected=selectAppChart(engineInput(bb,hand));if(selected.status!=='ok'){const m=missing[selected.status]??['НЕТ ДАННЫХ',selected.status];return result(selected.status,...m);}
  if(selected.external)return externalDecision(selected,hand);
  const chart=selected.chart,key=getRawKeyForHand(hand,chart),entry=chart.legend.find(e=>e.key===key);if(key===null)return result('data_conflict',...missing.data_conflict);
@@ -575,10 +672,12 @@ function decisionAt(bb,hand){
  return result(raw.status,'НУЖНО УТОЧНЕНИЕ',concisePlan(entry?.label??'Источник не задаёт решение.'));
 }
 function getSingleClearDecision(hand,selected=getActiveChart()){
+ if(selected.unified&&selected.status==='ok')return selected.external?externalDecision(selected,hand):selected.rows[hand].decision;
  if(selected.status!=='ok')return result(selected.status,...(missing[selected.status]??['НЕТ ДАННЫХ',selected.status]));
  const decisions=activeParts().map(p=>decisionAt(p.probe,hand)),first=decisions[0];return decisions.every(d=>JSON.stringify(d)===JSON.stringify(first))?first:result('condition_required',...missing.condition_required);
 }
 function segmentFor(hand,selected){
+ if(selected.unified)return null;
  if(selected.external)return null;
  const scenario=engineScenario(),key=getRawKeyForHand(hand,selected.chart),sourceOpponent=selected.sourceOpponent??opponent();
  if(selected.changedHands?.includes(hand))return null;
@@ -591,6 +690,7 @@ function segmentFor(hand,selected){
 function effectiveShortAction(hand){if(state.action!=='open'||state.stack!=='10-19')return null;const results=activeParts().map(p=>lookupAppHand(engineInput(p.probe,hand)));return results.length&&results.every(r=>r.status==='resolved'&&r.action===results[0].action)?results[0].action:null;}
 function effectiveEntry(entry){if(state.action==='vs_raise'){if(entry.key==='jam_lt30_or_bluff'&&activeParts().every(p=>p.probe>=30))return{...entry,key:'bluff',label:'3-бет блеф',color:getActiveChart().chart.legend.find(e=>e.key==='bluff')?.color??'#ffc764'};if(entry.key==='3bet_jam_or_flat_25_30'){const p=activeParts();if(p.every(p=>p.probe<25))return{...entry,key:'3bet_jam',label:'Пуш',color:'#e48073'};if(p.every(p=>p.probe>=25&&p.probe<30))return{...entry,label:'Пуш ИЛИ Колл'};}const parts=activeParts();if(entry.key==='jam_lt30_or_call'&&parts.every(p=>p.probe>=30)||entry.key==='jam_lt20_flat_20plus'&&parts.every(p=>p.probe>=20))return{...entry,key:'call',label:'Колл',color:getActiveChart().chart.legend.find(e=>e.key==='call')?.color??'#84a189'};if(entry.key==='jam_lt30_or_call'&&parts.every(p=>p.probe<30))return{...entry,label:'Пуш ИЛИ Колл'};}if(state.stack==='40+'&&entry.key==='call_40plus')return{...entry,label:'Опен-рейз / колл 3-бета'};if(state.range==='50+'&&entry.key==='call_50plus')return{...entry,label:'Опен-рейз / колл 3-бета'};if(state.action!=='open'||state.stack!=='10-19')return entry;const hands=getActiveChart().chart?.ranges[entry.key]??[],action=hands.length?effectiveShortAction(hands[0]):null;if(action==='open_push')return{...entry,key:'effective_push',label:'Опен-пуш',color:'#84a189'};if(action==='open_raise')return{...entry,key:'effective_raise',label:'Опен-рейз',color:'#e48073'};if(action==='open_raise_fold')return{...entry,key:'effective_raise_fold',label:'Опен-рейз / фолд на пуш',color:'#e48073'};return entry;}
 function cellAppearance(hand,selected){
+ if(selected.unified&&!selected.external)return selected.rows[hand].appearance;
  if(selected.external){const weights=selected.external.weights[hand],mixed=weights.filter(w=>w>0).length>1,background=externalGradient(selected.external,weights);return{background,text:mixed?'#fff':contrastText(background),mixed};}
  if(selected.status!=='ok')return{background:'#282c37',text:'#9ca3af',mixed:false};
  const key=getRawKeyForHand(hand,selected.chart),entry=selected.chart.legend.find(e=>e.key===key),segment=segmentFor(hand,selected);
@@ -608,7 +708,7 @@ function renderMiniTable(){
  function addChip(text,kind,handler,control,label,active,enabled=true,reason=''){const chip=makeButton(text,'action-chip '+kind+(active?' active-chip':''),handler);chip.dataset.control=control;chip.setAttribute('aria-label',label);chip.setAttribute('aria-pressed',String(active));chip.disabled=!enabled;chip.title=reason||label;bar.append(chip);}
  if(!hero){if(before){addChip('Р','raise-chip',e=>setRaiser(s,e),'raiser:'+s,'Рейз от '+pos,isSelected&&['vs_raise','rejam'].includes(state.action));if(state.pos==='BB'&&pos==='SB'){const enabled=anyCoverage('vs_limp',pos);addChip('Л','limp-chip',e=>setLimp(s,e),'limp:'+s,'Лимп SB — защита BB',isSelected&&state.action==='vs_limp',enabled,enabled?'Показать BB против лимпа SB':'Нет источника лимпа для этого стека (начиная с 15 BB).');}}
  else if(state.pos!=='BB'){addChip('3Б','threebet-chip',e=>setThreeBetter(s,e),'threebet:'+s,'Обычный 3-бет от '+pos,isSelected&&state.action==='faced_3bet',state.stack!=='1-9','Обычный 3-бет после нашего опен-рейза');const eligibility=aiEligibility(s);addChip('AI','allin-chip',e=>setAllIn(s,e),'allin:'+s,'ALL-IN '+pos+' после нашего опен-рейза',isSelected&&state.action==='vs_rejam',eligibility.ok,eligibility.reason);}}
- else if(state.opponentSeat!==null&&['vs_raise','rejam'].includes(state.action)){const enabled=anyCoverage('rejam',opponent());addChip('РЕПУШ','hero-repush-chip',e=>setOurRepush(e),'hero-repush','Наш репуш против '+opponent(),state.action==='rejam',enabled,enabled?'Диапазон нашего репуша против опена':'Нет чарта нашего репуша для этого стека/оппонента.');}
+
  group.append(bar);wrap.append(group);
  }
 }
@@ -625,6 +725,7 @@ function renderControls(){
 }
 function renderCoachNotes(selected,decision){
  const notes=[],add=text=>notes.push(text),parts=activeParts(),key=selected.chart?getRawKeyForHand(state.hand,selected.chart):null;
+ if(selected.unified&&!selected.external){add('Один чарт показывает ответ на опен-рейз. Репуши включены только для текущей вкладки стека; порог 15/20/25/30 BB относится к вкладке, которая заканчивается на этой границе, а не к следующей.');if(selected.mergedRepush)add('Дополнительные линии взяты из отдельного чарта репуша курса. Смешанные клетки показывают варианты из двух источников, а не частоты солвера; подстройка под соперника и размер рейза всё равно важна.');}
  if(selected.coverageExtension)add(`Для этой ситуации в источнике есть только чарт ${selected.coverageExtension.sourceLabel}. Он показан для всей вкладки ${selected.coverageExtension.rangeLabel} по согласованной адаптации. Исходный диапазон рук сохранён; точного отдельного чарта для остальных значений стека нет.`);
  let tip='';
  const onlyRepush=state.action==='rejam'&&state.opponentSeat!==null&&!anyCoverage('vs_raise',opponent());
@@ -632,6 +733,7 @@ function renderCoachNotes(selected,decision){
  else if(state.action==='open'&&state.range==='1-9')tip=decision.main==='ФОЛД'?'При 7–8 BB возможен более широкий пуш. Но эту руку чарт не подтверждает — автоматического пуша нет.':'Основа — чарт на 10 BB. При 7–8 BB возможен более широкий пуш, особенно с поздних позиций и анте.';
  else if(decision.status==='needs_resolution')tip='Для этой руки исходник не задаёт полного решения в выбранных условиях. Не считайте это ни фолдом, ни разрешением на пуш.';
  if(selected.external)tip=`Внешняя таблица на ${selected.external.anchor} BB. В диапазоне ${state.range} BB — приближённый ориентир, не точное решение для каждого стека.`;
+ if(selected.unified&&selected.partial)tip='Источник описывает только 3-бет/репуш. Для тёмно-серых клеток колл или фолд не определён — это не обязательный фолд.';
  $('coach-tip').textContent=tip;$('coach-tip').hidden=!tip;
  if(selected.external){
   const spec=selected.external;
@@ -660,15 +762,15 @@ function renderCoachNotes(selected,decision){
 
 function renderMatrixAndVerdict(){
  const selected=getActiveChart(),chart=selected.chart,matrix=$('matrix'),focused=document.activeElement?.dataset?.hand;matrix.replaceChildren();
- for(const hand of HANDS){const key=chart?getRawKeyForHand(hand,chart):null,entry=chart?.legend.find(e=>e.key===key),appearance=cellAppearance(hand,selected),cell=makeButton(hand,'cell'+(hand.length===2?' pair':'')+(state.hand===hand?' selected':'')+(appearance.mixed?' mixed-background':''),()=>setHand(hand));cell.dataset.hand=hand;cell.disabled=!chart;if(selected.external){const d=externalDecision(selected,hand);cell.setAttribute('aria-label',hand+' — '+d.main+(d.sub?' — '+d.sub:''));cell.title=d.main+(d.sub?' · '+d.sub:'');}cell.setAttribute('aria-pressed',String(state.hand===hand));if(!selected.external)cell.setAttribute('aria-label',hand+(entry?' — '+entry.label:chart?' — вне диапазона':' — нет данных'));cell.style.background=appearance.background;cell.style.color=appearance.text;matrix.append(cell);}
+ for(const hand of HANDS){const key=chart?getRawKeyForHand(hand,chart):null,entry=chart?.legend.find(e=>e.key===key),appearance=cellAppearance(hand,selected),cell=makeButton(hand,'cell'+(hand.length===2?' pair':'')+(state.hand===hand?' selected':'')+(appearance.mixed?' mixed-background':''),()=>setHand(hand));cell.dataset.hand=hand;cell.disabled=!chart;if(selected.external){const d=externalDecision(selected,hand);cell.setAttribute('aria-label',hand+' — '+d.main+(d.sub?' — '+d.sub:''));cell.title=d.main+(d.sub?' · '+d.sub:'');}if(selected.unified&&!selected.external){const d=selected.rows[hand].decision;cell.title=d.main+(d.sub?' · '+d.sub:'');}cell.setAttribute('aria-pressed',String(state.hand===hand));if(selected.unified&&!selected.external)cell.setAttribute('aria-label',hand+' — '+selected.rows[hand].decision.main+' — '+selected.rows[hand].decision.sub);else if(!selected.external)cell.setAttribute('aria-label',hand+(entry?' — '+entry.label:chart?' — вне диапазона':' — нет данных'));cell.style.background=appearance.background;cell.style.color=appearance.text;matrix.append(cell);}
  if(focused)matrix.querySelector(`[data-hand="${focused}"]`)?.focus({preventScroll:true});
  const dec=getSingleClearDecision(state.hand,selected),appearance=cellAppearance(state.hand,selected),overlay=$('empty-overlay');overlay.hidden=Boolean(chart);overlay.replaceChildren();if(!chart){const h=document.createElement('h3');h.textContent=dec.main;const p=document.createElement('p');p.textContent=dec.sub;overlay.append(h,p);}
  const banner=$('verdict-banner');banner.style.background=appearance.background;banner.style.color=appearance.text;banner.classList.toggle('mixed-background',appearance.mixed);banner.dataset.status=dec.status;$('verdict-hand').textContent=state.hand;$('verdict-main').textContent=dec.main;$('verdict-sub').textContent=dec.sub;
  const legend=$('legend');legend.replaceChildren();if(chart)for(const entry of [...new Map(chart.legend.map(e=>{const v=effectiveEntry(e);return[v.key+'|'+v.color,v];})).values()]){const item=document.createElement('div');item.className='legend-item';const swatch=document.createElement('span');swatch.className='swatch';swatch.style.background=entry.color;const text=document.createElement('span');text.textContent=entry.label;item.append(swatch,text);legend.append(item);}
  renderCoachNotes(selected,dec);
- const source=$('source-note');source.textContent=`База курса: ${DATABASE.summary.uniqueCharts} чартов; дополнения: ${EXTERNAL_PREFLOP.charts.length}. ${sourceDescription(selected)}${appearance.mixed&&!selected.external?'Двухцветная клетка: альтернативы без заданных частот. ':''}${dec.status==='needs_resolution'?'Исходник не задаёт однозначного решения.':''}`;if(selected.external){const link=document.createElement('a');link.href=EXTERNAL_PREFLOP.source.files[selected.external.sourceFile].url;link.textContent='Источник';link.target='_blank';link.rel='noopener noreferrer';link.style.color='#93c5fd';source.append(' ',link);}
+ const source=$('source-note');source.textContent=`База курса: ${DATABASE.summary.uniqueCharts} чартов; дополнения: ${EXTERNAL_PREFLOP.charts.length}. ${sourceDescription(selected)}${appearance.mixed&&!selected.external?'Цветные части клетки: альтернативы без заданных частот. ':''}${dec.status==='needs_resolution'?'Исходник не задаёт однозначного решения.':''}`;if(selected.external){const link=document.createElement('a');link.href=EXTERNAL_PREFLOP.source.files[selected.external.sourceFile].url;link.textContent='Источник';link.target='_blank';link.rel='noopener noreferrer';link.style.color='#93c5fd';source.append(' ',link);}
 }
-function renderAll(){const focus=document.activeElement?.dataset?.control;state.pos=heroPosition();if(state.opponentSeat!==null&&['vs_raise','rejam'].includes(state.action)&&!anyCoverage(state.action,opponent())){const alternative=state.action==='vs_raise'?'rejam':'vs_raise';if(anyCoverage(alternative,opponent())){state.action=alternative;state.condition=null;state.variant=null;}}const variants=engineScenario()==='open'?rawSlot()?.variants:null;if(variants&&!variants[state.variant])state.variant=variants.tight?'tight':Object.keys(variants)[0];renderMiniTable();renderControls();renderMatrixAndVerdict();if(focus)[...document.querySelectorAll('[data-control]')].find(el=>el.dataset.control===focus)?.focus({preventScroll:true});}
+function renderAll(){const focus=document.activeElement?.dataset?.control;state.pos=heroPosition();if(state.action==='rejam')state.action='vs_raise';const variants=engineScenario()==='open'?rawSlot()?.variants:null;if(variants&&!variants[state.variant])state.variant=variants.tight?'tight':Object.keys(variants)[0];renderMiniTable();renderControls();renderMatrixAndVerdict();if(focus)[...document.querySelectorAll('[data-control]')].find(el=>el.dataset.control===focus)?.focus({preventScroll:true});}
 for(const max of[8,9])$('btn-'+max+'max').onclick=()=>setTableMax(max);
 $('matrix').addEventListener('keydown',e=>{const dirs={ArrowLeft:[0,-1],ArrowRight:[0,1],ArrowUp:[-1,0],ArrowDown:[1,0]};if(!dirs[e.key])return;const cells=[...$('matrix').children],idx=cells.indexOf(e.target);if(idx<0)return;e.preventDefault();const[dr,dc]=dirs[e.key],r=Math.max(0,Math.min(12,Math.floor(idx/13)+dr)),c=Math.max(0,Math.min(12,idx%13+dc));cells[r*13+c]?.focus();});
 renderAll();
